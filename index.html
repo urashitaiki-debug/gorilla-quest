@@ -9,57 +9,56 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
-  *{box-sizing:border-box;margin:0;padding:0;}
-  body{background:#1a1a2e;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;}
-  select,button,input{font-family:inherit;}
-  select{appearance:none;-webkit-appearance:none;}
-  ::-webkit-scrollbar{width:4px;}
-  ::-webkit-scrollbar-thumb{background:#444;border-radius:2px;}
-  .card{background:#252540;border-radius:12px;padding:12px 14px;margin-bottom:8px;}
-  .btn-primary{background:#5cb87a;color:#fff;border:none;border-radius:10px;padding:13px;font-size:16px;font-weight:500;cursor:pointer;width:100%;}
-  .btn-protein{background:#5c8ee0;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap;}
-  input[type=number]{display:none;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#1a1a2e;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;}
+select,button{font-family:inherit;}
+select{appearance:none;-webkit-appearance:none;}
+.card{background:#252540;border-radius:12px;padding:12px 14px;margin-bottom:8px;}
 </style>
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel">
-const {useState,useEffect,useCallback}=React;
+<script type="text/babel" data-presets="react" data-plugins="transform-class-properties">
+/* global React ReactDOM */
+const {useState,useEffect,useCallback} = React;
 
-const PARTS=[“胸”,“背中”,“脚”,“腕”,“肩”];
-const PART_COLOR={胸:”#e05c5c”,背中:”#5c8ee0”,脚:”#5cb87a”,腕:”#e0a85c”,肩:”#a05ce0”};
-const PRESETS={
-胸:[“ダンベルフライ”,“ケーブルクロスオーバー”,“ディップス”,“インクラインプレス”],
-背中:[“デッドリフト”,“ラットプルダウン”,“ベントオーバーロウ”,“チンアップ”],
-脚:[“スクワット”,“レッグプレス”,“ランジ”,“レッグカール”],
-腕:[“バーベルカール”,“ハンマーカール”,“トライセプスプレスダウン”,“スカルクラッシャー”],
-肩:[“ショルダープレス”,“サイドレイズ”,“フロントレイズ”,“フェイスプル”],
+const PARTS = [”\u80F8”,”\u80CC\u4E2D”,”\u811A”,”\u8155”,”\u80A9”];
+const PART_COLOR = {
+“\u80F8”:”#e05c5c”,
+“\u80CC\u4E2D”:”#5c8ee0”,
+“\u811A”:”#5cb87a”,
+“\u8155”:”#e0a85c”,
+“\u80A9”:”#a05ce0”
+};
+const PRESETS = {
+“\u80F8”:[”\u30C0\u30F3\u30D9\u30EB\u30D5\u30E9\u30A4”,”\u30B1\u30FC\u30D6\u30EB\u30AF\u30ED\u30B9\u30AA\u30FC\u30D0\u30FC”,”\u30C7\u30A3\u30C3\u30D7\u30B9”,”\u30A4\u30F3\u30AF\u30E9\u30A4\u30F3\u30D7\u30EC\u30B9”],
+“\u80CC\u4E2D”:[”\u30C7\u30C3\u30C9\u30EA\u30D5\u30C8”,”\u30E9\u30C3\u30C8\u30D7\u30EB\u30C0\u30A6\u30F3”,”\u30D9\u30F3\u30C8\u30AA\u30FC\u30D0\u30FC\u30ED\u30A6”,”\u30C1\u30F3\u30A2\u30C3\u30D7”],
+“\u811A”:[”\u30B9\u30AF\u30EF\u30C3\u30C8”,”\u30EC\u30C3\u30B0\u30D7\u30EC\u30B9”,”\u30E9\u30F3\u30B8”,”\u30EC\u30C3\u30B0\u30AB\u30FC\u30EB”],
+“\u8155”:[”\u30D0\u30FC\u30D9\u30EB\u30AB\u30FC\u30EB”,”\u30CF\u30F3\u30DE\u30FC\u30AB\u30FC\u30EB”,”\u30C8\u30E9\u30A4\u30BB\u30D7\u30B9\u30D7\u30EC\u30B9\u30C0\u30A6\u30F3”,”\u30B9\u30AB\u30EB\u30AF\u30E9\u30C3\u30B7\u30E3\u30FC”],
+“\u80A9”:[”\u30B7\u30E7\u30EB\u30C0\u30FC\u30D7\u30EC\u30B9”,”\u30B5\u30A4\u30C9\u30EC\u30A4\u30BA”,”\u30D5\u30ED\u30F3\u30C8\u30EC\u30A4\u30BA”,”\u30D5\u30A7\u30A4\u30B9\u30D7\u30EB”]
 };
 
 function levelInfo(xp){let lv=1,rem=xp,needed=100;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.3);}return{level:lv,current:rem,needed};}
 function partLevelInfo(xp){let lv=1,rem=xp,needed=50;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.4);}return{level:lv,current:rem,needed};}
 function getToday(){return new Date().toISOString().slice(0,10);}
-function getConsecutiveStreak(dates){
+function getStreak(dates){
 if(!dates.length)return 0;
 const uniq=[…new Set(dates)].sort().reverse();
-let streak=1;
-for(let i=0;i<uniq.length-1;i++){
-const diff=(new Date(uniq[i])-new Date(uniq[i+1]))/86400000;
-if(diff===1)streak++;else break;
-}
-return streak;
+let s=1;
+for(let i=0;i<uniq.length-1;i++){if((new Date(uniq[i])-new Date(uniq[i+1]))/86400000===1)s++;else break;}
+return s;
 }
 
 const BADGES=[
-{id:“first”,label:“初トレーニング”,icon:“⭐”,cond:s=>(s.totalSessions||0)>=1},
-{id:“streak3”,label:“3日連続”,icon:“🔥”,cond:s=>(s.maxStreak||0)>=3},
-{id:“streak7”,label:“7日連続”,icon:“💥”,cond:s=>(s.maxStreak||0)>=7},
-{id:“var5”,label:“種目5種類”,icon:“💡”,cond:s=>Object.keys(s.exercises||{}).length>=5},
-{id:“lv5”,label:“レベル5到達”,icon:“⚡”,cond:s=>(s.level||1)>=5},
-{id:“lv10”,label:“レベル10到達”,icon:“👑”,cond:s=>(s.level||1)>=10},
-{id:“protein10”,label:“プロテイン10杯”,icon:“🥤”,cond:s=>(s.totalProtein||0)>=10},
+{id:“first”, label:”\u521D\u30C8\u30EC\u30FC\u30CB\u30F3\u30B0”, icon:”\u2B50”, cond:s=>(s.totalSessions||0)>=1},
+{id:“s3”,    label:“3\u65E5\u9023\u7D9A”,      icon:”\uD83D\uDD25”, cond:s=>(s.maxStreak||0)>=3},
+{id:“s7”,    label:“7\u65E5\u9023\u7D9A”,      icon:”\uD83D\uDCA5”, cond:s=>(s.maxStreak||0)>=7},
+{id:“v5”,    label:”\u7A2E\u76EE5\u7A2E\u985E”,icon:”\uD83D\uDCA1”, cond:s=>Object.keys(s.exercises||{}).length>=5},
+{id:“lv5”,   label:”\u30EC\u30D9\u30EB5\u5230\u9054”,icon:”\u26A1”,cond:s=>(s.level||1)>=5},
+{id:“lv10”,  label:”\u30EC\u30D9\u30EB10\u5230\u9054”,icon:”\uD83D\uDC51”,cond:s=>(s.level||1)>=10},
+{id:“p10”,   label:”\u30D7\u30ED\u30C6\u30A410\u676F”,icon:”\uD83E\uDD64”,cond:s=>(s.totalProtein||0)>=10},
 ];
-const BADGE_BG=[”#e0a85c”,”#e05c5c”,”#a05ce0”,”#5c8ee0”,”#5cb87a”,”#d4a800”,”#7c6cdb”];
+const BBGS=[”#e0a85c”,”#e05c5c”,”#a05ce0”,”#5c8ee0”,”#5cb87a”,”#d4a800”,”#7c6cdb”];
 
 function Gorilla({partXP,stage,badges}){
 const s=Math.min(Math.max(stage,0),4);
@@ -73,77 +72,63 @@ const P=[
 {bw:58,bh:44,hw:38,hh:29,aw:22,ah:14,lw:16,lh:25,ew:18,eh:10,belly:false},
 {bw:72,bh:54,hw:46,hh:34,aw:28,ah:17,lw:20,lh:30,ew:22,eh:12,belly:false},
 ][s];
-const cx=70,cy=85,bodyTop=cy-P.bh/2;
-const earnedBadges=BADGES.filter(b=>badges.includes(b.id));
+const cx=70,cy=85,bt=cy-P.bh/2;
+const eb=BADGES.filter(b=>badges.includes(b.id));
 return(
 <svg width=“140” height=“170” viewBox=“0 0 140 170” style={{display:“block”,margin:“0 auto”,overflow:“visible”}}>
-{earnedBadges.map((b,i)=>{
-const angle=(i/Math.max(earnedBadges.length,1))*Math.PI*2-Math.PI/2;
-const r=54,bx=cx+Math.cos(angle)*r,by=cy+Math.sin(angle)*r;
-return(<g key={b.id}><circle cx={bx} cy={by} r={11} fill={BADGE_BG[i%BADGE_BG.length]} opacity={0.25}/><text x={bx} y={by+5} textAnchor="middle" fontSize={12}>{b.icon}</text></g>);
-})}
-<rect x={cx-P.lw-2} y={bodyTop+P.bh-4} width={P.lw} height={P.lh} rx={P.lw/2} fill={col(“脚”)} opacity={op(“脚”)}/>
-<rect x={cx+2} y={bodyTop+P.bh-4} width={P.lw} height={P.lh} rx={P.lw/2} fill={col(“脚”)} opacity={op(“脚”)}/>
-<rect x={cx-P.bw/2} y={bodyTop} width={P.bw} height={P.bh} rx={P.bw*0.22} fill={col(“背中”)} opacity={op(“背中”)}/>
-<ellipse cx={cx} cy={bodyTop+P.bh*0.42} rx={P.bw*0.34} ry={P.bh*0.3} fill={col(“胸”)} opacity={op(“胸”)}/>
-{P.belly&&<ellipse cx={cx} cy={bodyTop+P.bh*0.62} rx={P.bw*0.25} ry={P.bh*0.2} fill="#c8a87a" opacity={0.55}/>}
-<ellipse cx={cx-P.bw/2-P.ew*0.1} cy={bodyTop+P.bh*0.18} rx={P.ew} ry={P.eh} fill={col(“肩”)} opacity={op(“肩”)}/>
-<ellipse cx={cx+P.bw/2+P.ew*0.1} cy={bodyTop+P.bh*0.18} rx={P.ew} ry={P.eh} fill={col(“肩”)} opacity={op(“肩”)}/>
-<rect x={cx-P.bw/2-P.aw+2} y={bodyTop+P.bh*0.22} width={P.aw} height={P.ah*1.6} rx={P.aw/2} fill={col(“腕”)} opacity={op(“腕”)}/>
-<rect x={cx+P.bw/2-2} y={bodyTop+P.bh*0.22} width={P.aw} height={P.ah*1.6} rx={P.aw/2} fill={col(“腕”)} opacity={op(“腕”)}/>
-<rect x={cx-P.bw/2-P.aw*0.7+2} y={bodyTop+P.bh*0.22+P.ah*1.6-2} width={P.aw*0.75} height={P.ah*1.4} rx={P.aw*0.4} fill={col(“腕”)} opacity={op(“腕”)*0.85}/>
-<rect x={cx+P.bw/2+2} y={bodyTop+P.bh*0.22+P.ah*1.6-2} width={P.aw*0.75} height={P.ah*1.4} rx={P.aw*0.4} fill={col(“腕”)} opacity={op(“腕”)*0.85}/>
-<circle cx={cx-P.bw/2-P.aw*0.35+2} cy={bodyTop+P.bh*0.22+P.ah*3+4} r={P.aw*0.4} fill={col(“腕”)} opacity={op(“腕”)}/>
-<circle cx={cx+P.bw/2+P.aw*0.4} cy={bodyTop+P.bh*0.22+P.ah*3+4} r={P.aw*0.4} fill={col(“腕”)} opacity={op(“腕”)}/>
-<ellipse cx={cx} cy={bodyTop-P.hh*0.35} rx={P.hw/2} ry={P.hh/2} fill="#8B6914"/>
-{s>=3&&<ellipse cx={cx} cy={bodyTop-P.hh*0.65} rx={P.hw/2*0.85} ry={P.hh*0.15} fill="#6b4f10"/>}
-<circle cx={cx-P.hw/2+2} cy={bodyTop-P.hh*0.35} r={P.hh*0.2} fill="#7a5a10"/>
-<circle cx={cx+P.hw/2-2} cy={bodyTop-P.hh*0.35} r={P.hh*0.2} fill="#7a5a10"/>
-<ellipse cx={cx} cy={bodyTop-P.hh*0.2} rx={P.hw*0.34} ry={P.hh*0.32} fill="#c8a060"/>
-<circle cx={cx-P.hw*0.18} cy={bodyTop-P.hh*0.42} r={s>=3?3.5:2.5} fill=”#111”/>
-<circle cx={cx+P.hw*0.18} cy={bodyTop-P.hh*0.42} r={s>=3?3.5:2.5} fill=”#111”/>
-<circle cx={cx-P.hw*0.15} cy={bodyTop-P.hh*0.46} r={1} fill="#fff" opacity={0.7}/>
-<circle cx={cx+P.hw*0.21} cy={bodyTop-P.hh*0.46} r={1} fill="#fff" opacity={0.7}/>
-<ellipse cx={cx} cy={bodyTop-P.hh*0.18} rx={P.hw*0.1} ry={P.hh*0.09} fill="#5a3a08"/>
-<circle cx={cx-P.hw*0.06} cy={bodyTop-P.hh*0.19} r={P.hw*0.035} fill="#3a2505"/>
-<circle cx={cx+P.hw*0.06} cy={bodyTop-P.hh*0.19} r={P.hw*0.035} fill="#3a2505"/>
-{s<=1
-?<path d={`M${cx-P.hw*0.1},${bodyTop-P.hh*0.06} Q${cx},${bodyTop+P.hh*0.04} ${cx+P.hw*0.1},${bodyTop-P.hh*0.06}`} stroke=”#5a3a08” strokeWidth={1.5} fill=“none” strokeLinecap=“round”/>
-:s>=4
-?<path d={`M${cx-P.hw*0.12},${bodyTop-P.hh*0.04} Q${cx},${bodyTop-P.hh*0.12} ${cx+P.hw*0.12},${bodyTop-P.hh*0.04}`} stroke=”#5a3a08” strokeWidth={2} fill=“none” strokeLinecap=“round”/>
-:<line x1={cx-P.hw*0.09} y1={bodyTop-P.hh*0.05} x2={cx+P.hw*0.09} y2={bodyTop-P.hh*0.05} stroke="#5a3a08" strokeWidth={1.5} strokeLinecap="round"/>
-}
-{s===4&&<><text x={cx-P.bw/2-14} y={bodyTop+P.bh*0.5} fontSize={10} fill="#e0a85c" opacity={0.8}>💢</text><text x={cx+P.bw/2+4} y={bodyTop+P.bh*0.5} fontSize={10} fill="#e0a85c" opacity={0.8}>💢</text></>}
+{eb.map((b,i)=>{const a=(i/Math.max(eb.length,1))*Math.PI*2-Math.PI/2,r=54,bx=cx+Math.cos(a)*r,by=cy+Math.sin(a)*r;return(<g key={b.id}><circle cx={bx} cy={by} r={11} fill={BBGS[i%BBGS.length]} opacity={0.25}/><text x={bx} y={by+5} textAnchor="middle" fontSize={12}>{b.icon}</text></g>);})}
+<rect x={cx-P.lw-2} y={bt+P.bh-4} width={P.lw} height={P.lh} rx={P.lw/2} fill={col(”\u811A”)} opacity={op(”\u811A”)}/>
+<rect x={cx+2} y={bt+P.bh-4} width={P.lw} height={P.lh} rx={P.lw/2} fill={col(”\u811A”)} opacity={op(”\u811A”)}/>
+<rect x={cx-P.bw/2} y={bt} width={P.bw} height={P.bh} rx={P.bw*0.22} fill={col(”\u80CC\u4E2D”)} opacity={op(”\u80CC\u4E2D”)}/>
+<ellipse cx={cx} cy={bt+P.bh*0.42} rx={P.bw*0.34} ry={P.bh*0.3} fill={col(”\u80F8”)} opacity={op(”\u80F8”)}/>
+{P.belly&&<ellipse cx={cx} cy={bt+P.bh*0.62} rx={P.bw*0.25} ry={P.bh*0.2} fill="#c8a87a" opacity={0.55}/>}
+<ellipse cx={cx-P.bw/2-P.ew*0.1} cy={bt+P.bh*0.18} rx={P.ew} ry={P.eh} fill={col(”\u80A9”)} opacity={op(”\u80A9”)}/>
+<ellipse cx={cx+P.bw/2+P.ew*0.1} cy={bt+P.bh*0.18} rx={P.ew} ry={P.eh} fill={col(”\u80A9”)} opacity={op(”\u80A9”)}/>
+<rect x={cx-P.bw/2-P.aw+2} y={bt+P.bh*0.22} width={P.aw} height={P.ah*1.6} rx={P.aw/2} fill={col(”\u8155”)} opacity={op(”\u8155”)}/>
+<rect x={cx+P.bw/2-2} y={bt+P.bh*0.22} width={P.aw} height={P.ah*1.6} rx={P.aw/2} fill={col(”\u8155”)} opacity={op(”\u8155”)}/>
+<rect x={cx-P.bw/2-P.aw*0.7+2} y={bt+P.bh*0.22+P.ah*1.6-2} width={P.aw*0.75} height={P.ah*1.4} rx={P.aw*0.4} fill={col(”\u8155”)} opacity={op(”\u8155”)*0.85}/>
+<rect x={cx+P.bw/2+2} y={bt+P.bh*0.22+P.ah*1.6-2} width={P.aw*0.75} height={P.ah*1.4} rx={P.aw*0.4} fill={col(”\u8155”)} opacity={op(”\u8155”)*0.85}/>
+<circle cx={cx-P.bw/2-P.aw*0.35+2} cy={bt+P.bh*0.22+P.ah*3+4} r={P.aw*0.4} fill={col(”\u8155”)} opacity={op(”\u8155”)}/>
+<circle cx={cx+P.bw/2+P.aw*0.4} cy={bt+P.bh*0.22+P.ah*3+4} r={P.aw*0.4} fill={col(”\u8155”)} opacity={op(”\u8155”)}/>
+<ellipse cx={cx} cy={bt-P.hh*0.35} rx={P.hw/2} ry={P.hh/2} fill="#8B6914"/>
+{s>=3&&<ellipse cx={cx} cy={bt-P.hh*0.65} rx={P.hw/2*0.85} ry={P.hh*0.15} fill="#6b4f10"/>}
+<circle cx={cx-P.hw/2+2} cy={bt-P.hh*0.35} r={P.hh*0.2} fill="#7a5a10"/>
+<circle cx={cx+P.hw/2-2} cy={bt-P.hh*0.35} r={P.hh*0.2} fill="#7a5a10"/>
+<ellipse cx={cx} cy={bt-P.hh*0.2} rx={P.hw*0.34} ry={P.hh*0.32} fill="#c8a060"/>
+<circle cx={cx-P.hw*0.18} cy={bt-P.hh*0.42} r={s>=3?3.5:2.5} fill=”#111”/>
+<circle cx={cx+P.hw*0.18} cy={bt-P.hh*0.42} r={s>=3?3.5:2.5} fill=”#111”/>
+<circle cx={cx-P.hw*0.15} cy={bt-P.hh*0.46} r={1} fill="#fff" opacity={0.7}/>
+<circle cx={cx+P.hw*0.21} cy={bt-P.hh*0.46} r={1} fill="#fff" opacity={0.7}/>
+<ellipse cx={cx} cy={bt-P.hh*0.18} rx={P.hw*0.1} ry={P.hh*0.09} fill="#5a3a08"/>
+<circle cx={cx-P.hw*0.06} cy={bt-P.hh*0.19} r={P.hw*0.035} fill="#3a2505"/>
+<circle cx={cx+P.hw*0.06} cy={bt-P.hh*0.19} r={P.hw*0.035} fill="#3a2505"/>
+{s<=1?<path d={`M${cx-P.hw*0.1},${bt-P.hh*0.06} Q${cx},${bt+P.hh*0.04} ${cx+P.hw*0.1},${bt-P.hh*0.06}`} stroke=”#5a3a08” strokeWidth={1.5} fill=“none” strokeLinecap=“round”/>:s>=4?<path d={`M${cx-P.hw*0.12},${bt-P.hh*0.04} Q${cx},${bt-P.hh*0.12} ${cx+P.hw*0.12},${bt-P.hh*0.04}`} stroke=”#5a3a08” strokeWidth={2} fill=“none” strokeLinecap=“round”/>:<line x1={cx-P.hw*0.09} y1={bt-P.hh*0.05} x2={cx+P.hw*0.09} y2={bt-P.hh*0.05} stroke="#5a3a08" strokeWidth={1.5} strokeLinecap="round"/>}
+{s===4&&<><text x={cx-P.bw/2-14} y={bt+P.bh*0.5} fontSize={10} fill="#e0a85c" opacity={0.8}>\uD83D\uDCA2</text><text x={cx+P.bw/2+4} y={bt+P.bh*0.5} fontSize={10} fill="#e0a85c" opacity={0.8}>\uD83D\uDCA2</text></>}
 </svg>
 );
 }
 
-function getStage(level){if(level<3)return 0;if(level<6)return 1;if(level<10)return 2;if(level<15)return 3;return 4;}
-const STAGE_LABELS=[“赤ちゃんゴリラ”,“子ゴリラ”,“若ゴリラ”,“大人ゴリラ”,“最強ゴリラ”];
+function getStage(l){if(l<3)return 0;if(l<6)return 1;if(l<10)return 2;if(l<15)return 3;return 4;}
+const SL=[”\u8D64\u3061\u3083\u3093\u30B4\u30EA\u30E9”,”\u5B50\u30B4\u30EA\u30E9”,”\u82E5\u30B4\u30EA\u30E9”,”\u5927\u4EBA\u30B4\u30EA\u30E9”,”\u6700\u5F37\u30B4\u30EA\u30E9”];
 
 function Stepper({value,onChange,step=5,min=0}){
 return(
 <div style={{display:“flex”,alignItems:“center”,background:”#1a1a2e”,borderRadius:10,border:“1px solid #444”,overflow:“hidden”}}>
-<button onClick={()=>onChange(Math.max(min,value-step))}
-style={{width:40,height:40,border:“none”,background:“transparent”,color:”#e0e0e0”,fontSize:20,cursor:“pointer”}}>−</button>
+<button onClick={()=>onChange(Math.max(min,value-step))} style={{width:40,height:40,border:“none”,background:“transparent”,color:”#e0e0e0”,fontSize:20,cursor:“pointer”}}>-</button>
 <span style={{flex:1,textAlign:“center”,fontSize:15,fontWeight:500,color:”#e0e0e0”,userSelect:“none”}}>{value}</span>
-<button onClick={()=>onChange(value+step)}
-style={{width:40,height:40,border:“none”,background:“transparent”,color:”#e0e0e0”,fontSize:20,cursor:“pointer”}}>＋</button>
+<button onClick={()=>onChange(value+step)} style={{width:40,height:40,border:“none”,background:“transparent”,color:”#e0e0e0”,fontSize:20,cursor:“pointer”}}>+</button>
 </div>
 );
 }
 
 const INIT={totalXP:0,partXP:{},exercises:{},sessions:[],badges:[],totalSessions:0,maxStreak:0,level:1,totalProtein:0};
-const STORAGE_KEY=“gorilla_quest_v1”;
+const SK=“gorilla_quest_v1”;
 
 function App(){
-const [data,setData]=useState(()=>{
-try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||“null”)||INIT;}
-catch{return INIT;}
-});
+const [data,setData]=useState(()=>{try{return JSON.parse(localStorage.getItem(SK)||“null”)||INIT;}catch{return INIT;}});
 const [tab,setTab]=useState(“log”);
-const [part,setPart]=useState(“胸”);
-const [exercise,setExercise]=useState(PRESETS[“胸”][0]);
+const [part,setPart]=useState(PARTS[0]);
+const [exercise,setExercise]=useState(PRESETS[PARTS[0]][0]);
 const [weight,setWeight]=useState(60);
 const [reps,setReps]=useState(10);
 const [sets,setSets]=useState(3);
@@ -153,11 +138,7 @@ const [toast,setToast]=useState(null);
 
 useEffect(()=>{setExercise(PRESETS[part][0]);},[part]);
 
-const save=useCallback(d=>{
-setData(d);
-try{localStorage.setItem(STORAGE_KEY,JSON.stringify(d));}catch(e){}
-},[]);
-
+const save=useCallback(d=>{setData(d);try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){};},[]);
 const showToast=(msg,color=”#5cb87a”)=>{setToast({msg,color});setTimeout(()=>setToast(null),2800);};
 
 const handleRecord=()=>{
@@ -166,71 +147,58 @@ const isNew=!data.exercises[exercise];
 const prevMax=data.exercises[exercise]?.maxWeight||0;
 const isPR=weight>prevMax&&!isNew;
 let xp=sets*5;
-const xpLog=[`${sets}セット×5 +${sets*5}XP`];
-if(isNew){xp+=20;xpLog.push(“新種目 +20XP”);}
-if(isPR){xp+=30;xpLog.push(“自己ベスト +30XP”);}
-const newSessions=[…data.sessions,today];
-const streak=getConsecutiveStreak(newSessions);
-const prevStreak=getConsecutiveStreak(data.sessions);
-if(streak>=3&&streak>prevStreak){xp+=50;xpLog.push(“連続ボーナス +50XP”);}
-const newTotalXP=data.totalXP+xp;
-const {level}=levelInfo(newTotalXP);
-const newPartXP={…data.partXP};
-newPartXP[part]=(newPartXP[part]||0)+(sets*5);
-const newExercises={…data.exercises};
-newExercises[exercise]={maxWeight:Math.max(weight,prevMax),count:(newExercises[exercise]?.count||0)+1,part};
-const draft={…data,totalXP:newTotalXP,partXP:newPartXP,exercises:newExercises,
-sessions:newSessions,totalSessions:(data.totalSessions||0)+1,
-maxStreak:Math.max(data.maxStreak||0,streak),level};
-draft.badges=[…(data.badges||[])];
-BADGES.forEach(b=>{if(!draft.badges.includes(b.id)&&b.cond(draft))draft.badges.push(b.id);});
-save(draft);
-setRecentLog(prev=>[{exercise,part,weight,reps,sets,xp,xpLog,
-time:new Date().toLocaleTimeString(“ja-JP”,{hour:“2-digit”,minute:“2-digit”})},…prev.slice(0,9)]);
-showToast(`+${xp}XP 獲得！`);
+const xl=[`${sets}x5 +${sets*5}XP`];
+if(isNew){xp+=20;xl.push(”+20XP(\u65B0\u7A2E\u76EE)”);}
+if(isPR){xp+=30;xl.push(”+30XP(\u81EA\u5DF1\u30D9\u30B9\u30C8)”);}
+const ns=[…data.sessions,today];
+const streak=getStreak(ns);
+if(streak>=3&&streak>getStreak(data.sessions)){xp+=50;xl.push(”+50XP(\u9023\u7D9A)”);}
+const ntxp=data.totalXP+xp;
+const {level}=levelInfo(ntxp);
+const np={…data.partXP};np[part]=(np[part]||0)+(sets*5);
+const ne={…data.exercises};ne[exercise]={maxWeight:Math.max(weight,prevMax),count:(ne[exercise]?.count||0)+1,part};
+const d={…data,totalXP:ntxp,partXP:np,exercises:ne,sessions:ns,totalSessions:(data.totalSessions||0)+1,maxStreak:Math.max(data.maxStreak||0,streak),level};
+d.badges=[…(data.badges||[])];
+BADGES.forEach(b=>{if(!d.badges.includes(b.id)&&b.cond(d))d.badges.push(b.id);});
+save(d);
+setRecentLog(prev=>[{exercise,part,weight,reps,sets,xp,xl,time:new Date().toLocaleTimeString(“ja-JP”,{hour:“2-digit”,minute:“2-digit”})},…prev.slice(0,9)]);
+showToast(`+${xp}XP!`);
 };
 
 const handleProtein=()=>{
 const xp=protein*10;
-const newTotalXP=data.totalXP+xp;
-const {level}=levelInfo(newTotalXP);
-const newPartXP={…data.partXP};
-PARTS.forEach(p=>{newPartXP[p]=(newPartXP[p]||0)+protein*2;});
-const draft={…data,totalXP:newTotalXP,partXP:newPartXP,level,totalProtein:(data.totalProtein||0)+protein};
-draft.badges=[…(data.badges||[])];
-BADGES.forEach(b=>{if(!draft.badges.includes(b.id)&&b.cond(draft))draft.badges.push(b.id);});
-save(draft);
-showToast(`プロテイン${protein}杯 +${xp}XP！`,”#5c8ee0”);
+const ntxp=data.totalXP+xp;
+const {level}=levelInfo(ntxp);
+const np={…data.partXP};
+PARTS.forEach(p=>{np[p]=(np[p]||0)+protein*2;});
+const d={…data,totalXP:ntxp,partXP:np,level,totalProtein:(data.totalProtein||0)+protein};
+d.badges=[…(data.badges||[])];
+BADGES.forEach(b=>{if(!d.badges.includes(b.id)&&b.cond(d))d.badges.push(b.id);});
+save(d);
+showToast(`\u30D7\u30ED\u30C6\u30A4\u30F3${protein}\u676F +${xp}XP!`,”#5c8ee0”);
 };
 
 const {level,current,needed}=levelInfo(data.totalXP||0);
 const pct=Math.round((current/needed)*100);
 const stage=getStage(level);
 
-const tabStyle=t=>({
-flex:1,padding:“9px 0”,border:“none”,borderRadius:8,cursor:“pointer”,fontSize:13,fontWeight:500,
+const ts=t=>({flex:1,padding:“9px 0”,border:“none”,borderRadius:8,cursor:“pointer”,fontSize:13,fontWeight:500,
 background:tab===t?“rgba(92,184,122,0.18)”:“rgba(255,255,255,0.05)”,
 color:tab===t?”#5cb87a”:”#aaa”,
-boxShadow:tab===t?“inset 0 2px 4px rgba(0,0,0,0.3),0 1px 0 rgba(255,255,255,0.05)”:“inset 0 1px 3px rgba(0,0,0,0.2)”,
-transition:“all 0.15s”,
-});
+boxShadow:tab===t?“inset 0 2px 4px rgba(0,0,0,0.3)”:“inset 0 1px 3px rgba(0,0,0,0.2)”,transition:“all 0.15s”});
 
 return(
 <div style={{maxWidth:430,margin:“0 auto”,padding:“12px 14px”}}>
-{toast&&(
-<div style={{position:“fixed”,top:18,left:“50%”,transform:“translateX(-50%)”,
-background:toast.color,color:”#fff”,padding:“10px 26px”,borderRadius:24,
-fontSize:14,fontWeight:500,zIndex:999}}>{toast.msg}</div>
-)}
+{toast&&<div style={{position:“fixed”,top:18,left:“50%”,transform:“translateX(-50%)”,background:toast.color,color:”#fff”,padding:“10px 26px”,borderRadius:24,fontSize:14,fontWeight:500,zIndex:999}}>{toast.msg}</div>}
 
 ```
   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
     <div>
       <div style={{fontSize:20,fontWeight:500}}>Gorilla Quest</div>
-      <div style={{fontSize:11,color:"#aaa"}}>{STAGE_LABELS[stage]} · Lv.{level} · 総XP {data.totalXP||0}</div>
+      <div style={{fontSize:11,color:"#aaa"}}>{SL[stage]} · Lv.{level} · {data.totalXP||0}XP</div>
     </div>
     <div style={{textAlign:"right"}}>
-      <div style={{fontSize:11,color:"#aaa",marginBottom:3}}>Lv.{level} → {level+1}</div>
+      <div style={{fontSize:11,color:"#aaa",marginBottom:3}}>Lv.{level}&rarr;{level+1}</div>
       <div style={{width:110,height:7,borderRadius:4,background:"#333",overflow:"hidden"}}>
         <div style={{height:"100%",width:`${pct}%`,background:"#5cb87a",borderRadius:4,transition:"width 0.4s"}}/>
       </div>
@@ -241,23 +209,19 @@ fontSize:14,fontWeight:500,zIndex:999}}>{toast.msg}</div>
   <div className="card" style={{padding:"16px 8px 10px",textAlign:"center"}}>
     <Gorilla partXP={data.partXP||{}} stage={stage} badges={data.badges||[]}/>
     <div style={{display:"flex",flexWrap:"wrap",gap:5,justifyContent:"center",marginTop:8}}>
-      {PARTS.map(p=>{
-        const pi=partLevelInfo((data.partXP||{})[p]||0);
-        return(
-          <div key={p} style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",
-            borderRadius:20,background:`${PART_COLOR[p]}22`,border:`1px solid ${PART_COLOR[p]}66`,fontSize:11}}>
-            <span style={{width:8,height:8,borderRadius:"50%",background:PART_COLOR[p],display:"inline-block"}}/>
-            <span style={{color:PART_COLOR[p],fontWeight:600}}>{p}</span>
-            <span style={{color:"#666"}}>Lv.{pi.level}</span>
-          </div>
-        );
-      })}
+      {PARTS.map(p=>{const pi=partLevelInfo((data.partXP||{})[p]||0);return(
+        <div key={p} style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",borderRadius:20,background:`${PART_COLOR[p]}22`,border:`1px solid ${PART_COLOR[p]}66`,fontSize:11}}>
+          <span style={{width:8,height:8,borderRadius:"50%",background:PART_COLOR[p],display:"inline-block"}}/>
+          <span style={{color:PART_COLOR[p],fontWeight:600}}>{p}</span>
+          <span style={{color:"#666"}}>Lv.{pi.level}</span>
+        </div>
+      );})}
     </div>
   </div>
 
   <div style={{display:"flex",gap:4,margin:"10px 0",background:"rgba(0,0,0,0.3)",padding:4,borderRadius:12,boxShadow:"inset 0 2px 6px rgba(0,0,0,0.3)"}}>
-    {[["log","記録"],["history","履歴"],["badge","バッジ"]].map(([t,label])=>(
-      <button key={t} style={tabStyle(t)} onClick={()=>setTab(t)}>{label}</button>
+    {[["log","\u8A18\u9332"],["history","\u5C65\u6B74"],["badge","\u30D0\u30C3\u30B8"]].map(([t,l])=>(
+      <button key={t} style={ts(t)} onClick={()=>setTab(t)}>{l}</button>
     ))}
   </div>
 
@@ -265,20 +229,14 @@ fontSize:14,fontWeight:500,zIndex:999}}>{toast.msg}</div>
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       <div style={{display:"flex",gap:5}}>
         {PARTS.map(p=>(
-          <button key={p} onClick={()=>setPart(p)} style={{
-            flex:1,padding:"8px 0",border:`1.5px solid ${part===p?PART_COLOR[p]:"#444"}`,
-            borderRadius:8,background:part===p?`${PART_COLOR[p]}22`:"transparent",
-            color:part===p?PART_COLOR[p]:"#aaa",fontSize:12,fontWeight:500,cursor:"pointer"}}>{p}</button>
+          <button key={p} onClick={()=>setPart(p)} style={{flex:1,padding:"8px 0",border:`1.5px solid ${part===p?PART_COLOR[p]:"#444"}`,borderRadius:8,background:part===p?`${PART_COLOR[p]}22`:"transparent",color:part===p?PART_COLOR[p]:"#aaa",fontSize:12,fontWeight:500,cursor:"pointer"}}>{p}</button>
         ))}
       </div>
-      <select value={exercise} onChange={e=>setExercise(e.target.value)}
-        style={{width:"100%",padding:"10px 12px",borderRadius:8,background:"#252540",
-          border:"1px solid #444",color:"#e0e0e0",fontSize:15}}>
-        {PRESETS[part].map(e=><option key={e}>{e}</option>)}
+      <select value={exercise} onChange={e=>setExercise(e.target.value)} style={{width:"100%",padding:"10px 12px",borderRadius:8,background:"#252540",border:"1px solid #444",color:"#e0e0e0",fontSize:15}}>
+        {PRESETS[part].map(e=><option key={e} value={e}>{e}</option>)}
       </select>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-        {[["重量","kg",weight,setWeight,5,0],["回数","回",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(
-          ([label,unit,val,setter,step,min])=>(
+        {[["\u91CD\u91CF","kg",weight,setWeight,5,0],["\u56DE\u6570","\u56DE",reps,setReps,1,1],["\u30BB\u30C3\u30C8","set",sets,setSets,1,1]].map(([label,unit,val,setter,step,min])=>(
           <div key={label}>
             <div style={{fontSize:11,color:"#aaa",marginBottom:4,textAlign:"center"}}>{label}</div>
             <Stepper value={val} onChange={setter} step={step} min={min}/>
@@ -286,16 +244,18 @@ fontSize:14,fontWeight:500,zIndex:999}}>{toast.msg}</div>
           </div>
         ))}
       </div>
-      <button className="btn-primary" onClick={handleRecord}>トレーニング記録</button>
+      <button onClick={handleRecord} style={{background:"#5cb87a",color:"#fff",border:"none",borderRadius:10,padding:"13px",fontSize:16,fontWeight:500,cursor:"pointer",width:"100%"}}>
+        \u30C8\u30EC\u30FC\u30CB\u30F3\u30B0\u8A18\u9332
+      </button>
       <div className="card" style={{display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:13,color:"#aaa",whiteSpace:"nowrap"}}>プロテイン</span>
+        <span style={{fontSize:13,color:"#aaa",whiteSpace:"nowrap"}}>\u30D7\u30ED\u30C6\u30A4\u30F3</span>
         <div style={{flex:1}}><Stepper value={protein} onChange={setProtein} step={1} min={1}/></div>
-        <span style={{fontSize:13,color:"#aaa",whiteSpace:"nowrap"}}>{protein}杯</span>
-        <button className="btn-protein" onClick={handleProtein}>+{protein*10}XP</button>
+        <span style={{fontSize:13,color:"#aaa",whiteSpace:"nowrap"}}>{protein}\u676F</span>
+        <button onClick={handleProtein} style={{background:"#5c8ee0",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>+{protein*10}XP</button>
       </div>
       {recentLog.length>0&&(
         <div>
-          <div style={{fontSize:12,color:"#aaa",marginBottom:6}}>今日の記録</div>
+          <div style={{fontSize:12,color:"#aaa",marginBottom:6}}>\u4ECA\u65E5\u306E\u8A18\u9332</div>
           {recentLog.map((l,i)=>(
             <div key={i} className="card">
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -304,9 +264,9 @@ fontSize:14,fontWeight:500,zIndex:999}}>{toast.msg}</div>
               </div>
               <div style={{fontSize:12,color:"#aaa",marginTop:2}}>
                 <span style={{color:PART_COLOR[l.part]}}>{l.part}</span>
-                {` | ${l.weight}kg × ${l.reps}回 × ${l.sets}set | ${l.time}`}
+                {` | ${l.weight}kg x ${l.reps}\u56DE x ${l.sets}set | ${l.time}`}
               </div>
-              <div style={{fontSize:11,color:"#666",marginTop:2}}>{l.xpLog.join("  ")}</div>
+              <div style={{fontSize:11,color:"#666",marginTop:2}}>{l.xl.join("  ")}</div>
             </div>
           ))}
         </div>
@@ -317,8 +277,7 @@ fontSize:14,fontWeight:500,zIndex:999}}>{toast.msg}</div>
   {tab==="history"&&(
     <div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-        {[["総セッション",data.totalSessions||0,"回"],["最長連続",data.maxStreak||0,"日"],
-          ["種目数",Object.keys(data.exercises||{}).length,"種"],["プロテイン",data.totalProtein||0,"杯"]].map(([l,v,u])=>(
+        {[["\u7DCF\u30BB\u30C3\u30B7\u30E7\u30F3",data.totalSessions||0,"\u56DE"],["\u6700\u9577\u9023\u7D9A",data.maxStreak||0,"\u65E5"],["\u7A2E\u76EE\u6570",Object.keys(data.exercises||{}).length,"\u7A2E"],["\u30D7\u30ED\u30C6\u30A4\u30F3",data.totalProtein||0,"\u676F"]].map(([l,v,u])=>(
           <div key={l} style={{background:"#252540",borderRadius:10,padding:"12px"}}>
             <div style={{fontSize:11,color:"#aaa"}}>{l}</div>
             <div style={{fontSize:22,fontWeight:500,marginTop:2}}>{v}<span style={{fontSize:13,fontWeight:400}}>{u}</span></div>
@@ -326,58 +285,44 @@ fontSize:14,fontWeight:500,zIndex:999}}>{toast.msg}</div>
         ))}
       </div>
       <div className="card" style={{marginBottom:12}}>
-        <div style={{fontSize:13,fontWeight:500,marginBottom:10,color:"#aaa"}}>部位別レベル</div>
-        {PARTS.map(p=>{
-          const pi=partLevelInfo((data.partXP||{})[p]||0);
-          const ppct=Math.round((pi.current/pi.needed)*100);
-          return(
-            <div key={p} style={{marginBottom:8}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                <span style={{color:PART_COLOR[p],fontWeight:500}}>{p} Lv.{pi.level}</span>
-                <span style={{color:"#666"}}>{pi.current}/{pi.needed}</span>
-              </div>
-              <div style={{height:6,borderRadius:3,background:"#333",overflow:"hidden"}}>
-                <div style={{height:"100%",width:`${ppct}%`,background:PART_COLOR[p],borderRadius:3,transition:"width 0.4s"}}/>
-              </div>
+        <div style={{fontSize:13,fontWeight:500,marginBottom:10,color:"#aaa"}}>\u90E8\u4F4D\u5225\u30EC\u30D9\u30EB</div>
+        {PARTS.map(p=>{const pi=partLevelInfo((data.partXP||{})[p]||0),pp=Math.round((pi.current/pi.needed)*100);return(
+          <div key={p} style={{marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+              <span style={{color:PART_COLOR[p],fontWeight:500}}>{p} Lv.{pi.level}</span>
+              <span style={{color:"#666"}}>{pi.current}/{pi.needed}</span>
             </div>
-          );
-        })}
+            <div style={{height:6,borderRadius:3,background:"#333",overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${pp}%`,background:PART_COLOR[p],borderRadius:3,transition:"width 0.4s"}}/>
+            </div>
+          </div>
+        );})}
       </div>
       {Object.keys(data.exercises||{}).length>0?(
         <div>
-          <div style={{fontSize:13,fontWeight:500,marginBottom:8,color:"#aaa"}}>種目ベスト</div>
+          <div style={{fontSize:13,fontWeight:500,marginBottom:8,color:"#aaa"}}>\u7A2E\u76EE\u30D9\u30B9\u30C8</div>
           {Object.entries(data.exercises||{}).map(([name,e])=>(
             <div key={name} className="card" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
-                <span style={{fontSize:14}}>{name}</span>
-                <span style={{fontSize:11,marginLeft:6,color:PART_COLOR[e.part]||"#666"}}>{e.part}</span>
-              </div>
-              <span style={{fontSize:13,color:"#aaa"}}>{e.maxWeight}kg × {e.count}回</span>
+              <div><span style={{fontSize:14}}>{name}</span><span style={{fontSize:11,marginLeft:6,color:PART_COLOR[e.part]||"#666"}}>{e.part}</span></div>
+              <span style={{fontSize:13,color:"#aaa"}}>{e.maxWeight}kg x {e.count}\u56DE</span>
             </div>
           ))}
         </div>
-      ):<div style={{color:"#666",fontSize:14,textAlign:"center",padding:32}}>まだ記録がありません</div>}
+      ):<div style={{color:"#666",fontSize:14,textAlign:"center",padding:32}}>\u307E\u3060\u8A18\u9332\u304C\u3042\u308A\u307E\u305B\u3093</div>}
     </div>
   )}
 
   {tab==="badge"&&(
     <div>
-      <div style={{fontSize:12,color:"#aaa",marginBottom:10}}>獲得したバッジはゴリラの背景に飾られます</div>
+      <div style={{fontSize:12,color:"#aaa",marginBottom:10}}>\u7372\u5F97\u3057\u305F\u30D0\u30C3\u30B8\u306F\u30B4\u30EA\u30E9\u306E\u80CC\u666F\u306B\u98FE\u3089\u308C\u307E\u3059</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-        {BADGES.map((b,i)=>{
-          const unlocked=(data.badges||[]).includes(b.id);
-          return(
-            <div key={b.id} style={{background:"#252540",borderRadius:12,padding:"14px 12px",
-              textAlign:"center",border:`1px solid ${unlocked?BADGE_BG[i%BADGE_BG.length]+"88":"#333"}`,
-              opacity:unlocked?1:0.45}}>
-              <div style={{fontSize:26,marginBottom:6}}>{b.icon}</div>
-              <div style={{fontSize:13,fontWeight:500}}>{b.label}</div>
-              <div style={{fontSize:11,marginTop:4,color:unlocked?"#5cb87a":"#666"}}>
-                {unlocked?"解放済み":"未解放"}
-              </div>
-            </div>
-          );
-        })}
+        {BADGES.map((b,i)=>{const u=(data.badges||[]).includes(b.id);return(
+          <div key={b.id} style={{background:"#252540",borderRadius:12,padding:"14px 12px",textAlign:"center",border:`1px solid ${u?BBGS[i%BBGS.length]+"88":"#333"}`,opacity:u?1:0.45}}>
+            <div style={{fontSize:26,marginBottom:6}}>{b.icon}</div>
+            <div style={{fontSize:13,fontWeight:500}}>{b.label}</div>
+            <div style={{fontSize:11,marginTop:4,color:u?"#5cb87a":"#666"}}>{u?"\u89E3\u653E\u6E08\u307F":"\u672A\u89E3\u653E"}</div>
+          </div>
+        );})}
       </div>
     </div>
   )}
