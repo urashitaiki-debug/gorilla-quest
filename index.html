@@ -1,37 +1,53 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Gorilla Quest</title>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;}
-body{background:#1a1a2e;color:#e0e0e0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;}
-select,button{font-family:inherit;}
-select{appearance:none;-webkit-appearance:none;}
-.card{background:#252540;border-radius:12px;padding:12px 14px;margin-bottom:8px;}
-</style>
-</head>
-<body>
-<div id="root"></div>
-<script>
-const {useState,useEffect,useCallback,createElement:h,Fragment} = React;
+import { useState, useEffect, useCallback, useRef } from "react";
+
+const fontLink = document.createElement("link");
+fontLink.rel = "stylesheet";
+fontLink.href = "https://fonts.googleapis.com/css2?family=DotGothic16&display=swap";
+document.head.appendChild(fontLink);
+
+const DQ = {
+  bg:"#0a0a1a", win:"#000033", border:"#ffffff", gold:"#ffdd00",
+  text:"#ffffff", gray:"#aaaaaa", green:"#44ff44", blue:"#4488ff", dark:"#000011",
+};
+
+const G_STYLE = `
+  @keyframes levelup{0%{opacity:0;transform:scale(0.8)}20%{opacity:1;transform:scale(1.05)}80%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1)}}
+  @keyframes xpPop{0%{opacity:0;transform:translateY(0) scale(0.8)}20%{opacity:1;transform:translateY(-8px) scale(1)}80%{opacity:1;transform:translateY(-20px)}100%{opacity:0;transform:translateY(-32px)}}
+  @keyframes flash{0%,100%{opacity:0}50%{opacity:0.7}}
+  @keyframes badgePop{0%{opacity:0;transform:translateY(20px)}15%{opacity:1;transform:translateY(0)}80%{opacity:1}100%{opacity:0}}
+  .dq-win{background:${DQ.win};border:3px solid ${DQ.border};box-shadow:inset 0 0 0 1px #000066;font-family:'DotGothic16',monospace;}
+  .dq-btn{background:${DQ.win};border:2px solid ${DQ.border};color:${DQ.text};font-family:'DotGothic16',monospace;cursor:pointer;padding:8px 12px;font-size:14px;text-align:left;transition:background 0.1s;}
+  .dq-btn:hover{background:#000066;}
+  .dq-btn.active{background:#000066;color:${DQ.gold};}
+  select.dq-input{appearance:none;-webkit-appearance:none;background:#000011;border:2px solid #4444aa;color:${DQ.text};font-family:'DotGothic16',monospace;font-size:13px;padding:6px 10px;}
+`;
 
 const PARTS = ["胸","背中","脚","腕","肩"];
-const PART_COLOR = {"胸":"#e05c5c","背中":"#5c8ee0","脚":"#5cb87a","腕":"#e0a85c","肩":"#a05ce0"};
+const PART_COLOR = {"胸":"#ff6666","背中":"#6699ff","脚":"#66ff66","腕":"#ffaa44","肩":"#cc66ff"};
+
 const PRESETS = {
-  "胸":["ダンベルフライ","ケーブルクロスオーバー","ディップス","インクラインプレス"],
+  "胸":["ベンチプレス","ダンベルフライ","ケーブルクロスオーバー","ディップス","インクラインプレス"],
   "背中":["デッドリフト","ラットプルダウン","ベントオーバーロウ","チンアップ"],
   "脚":["スクワット","レッグプレス","ランジ","レッグカール"],
   "腕":["バーベルカール","ハンマーカール","トライセプスプレスダウン","スカルクラッシャー"],
-  "肩":["ショルダープレス","サイドレイズ","フロントレイズ","フェイスプル"]
+  "肩":["ショルダープレス","サイドレイズ","フロントレイズ","フェイスプル"],
 };
+
+// GitHub Pages の画像URL（アップロード後に有効になる）
+const BASE_URL = "https://urashitaiki-debug.github.io/gorilla-quest/images/";
+const GORILLA_IMGS = [
+  BASE_URL + "stage0.png",
+  BASE_URL + "stage1.png",
+  BASE_URL + "stage2.png",
+  BASE_URL + "stage3.png",
+  BASE_URL + "stage4.png",
+];
+const STAGE_LABELS = ["あかちゃんゴリラ","こゴリラ","わかゴリラ","おとなゴリラ","さいきょうゴリラ"];
 
 function levelInfo(xp){let lv=1,rem=xp,needed=100;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.3);}return{level:lv,current:rem,needed};}
 function partLevelInfo(xp){let lv=1,rem=xp,needed=50;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.4);}return{level:lv,current:rem,needed};}
 function getToday(){return new Date().toISOString().slice(0,10);}
+function getHour(){return new Date().getHours();}
 function getStreak(dates){
   if(!dates.length)return 0;
   const uniq=[...new Set(dates)].sort().reverse();
@@ -39,105 +55,172 @@ function getStreak(dates){
   for(let i=0;i<uniq.length-1;i++){if((new Date(uniq[i])-new Date(uniq[i+1]))/86400000===1)s++;else break;}
   return s;
 }
+function getStage(level){if(level<3)return 0;if(level<6)return 1;if(level<10)return 2;if(level<15)return 3;return 4;}
 
-const BADGES=[
-  {id:"first",label:"初トレーニング",icon:"★",cond:function(s){return(s.totalSessions||0)>=1;}},
-  {id:"s3",label:"3日連続",icon:"🔥",cond:function(s){return(s.maxStreak||0)>=3;}},
-  {id:"s7",label:"7日連続",icon:"💥",cond:function(s){return(s.maxStreak||0)>=7;}},
-  {id:"v5",label:"種目5種類",icon:"💡",cond:function(s){return Object.keys(s.exercises||{}).length>=5;}},
-  {id:"lv5",label:"レベル5到達",icon:"⚡",cond:function(s){return(s.level||1)>=5;}},
-  {id:"lv10",label:"レベル10到達",icon:"👑",cond:function(s){return(s.level||1)>=10;}},
-  {id:"p10",label:"プロテイン10杯",icon:"🥤",cond:function(s){return(s.totalProtein||0)>=10;}},
+const BADGES = [
+  {id:"b001",name:"スライムをたおした！",desc:"はじめてのきろく",cond:s=>(s.totalSessions||0)>=1},
+  {id:"b002",name:"ドラキーをたおした！",desc:"3かいきろくした",cond:s=>(s.totalSessions||0)>=3},
+  {id:"b003",name:"おおありをたおした！",desc:"10かいきろくした",cond:s=>(s.totalSessions||0)>=10},
+  {id:"b004",name:"いしにんぎょうをたおした！",desc:"20かいきろくした",cond:s=>(s.totalSessions||0)>=20},
+  {id:"b005",name:"ゴーレムをたおした！",desc:"50かいきろくした",cond:s=>(s.totalSessions||0)>=50},
+  {id:"b006",name:"キングスライムをたおした！",desc:"100かいきろくした",cond:s=>(s.totalSessions||0)>=100},
+  {id:"b007",name:"りゅうをたおした！",desc:"200かいきろくした",cond:s=>(s.totalSessions||0)>=200},
+  {id:"b010",name:"まものの巣にふみこんだ！",desc:"3にちれんぞく",cond:s=>(s.maxStreak||0)>=3},
+  {id:"b011",name:"あんこくのとびらをこえた！",desc:"7にちれんぞく",cond:s=>(s.maxStreak||0)>=7},
+  {id:"b012",name:"ちていのダンジョンをでた！",desc:"14にちれんぞく",cond:s=>(s.maxStreak||0)>=14},
+  {id:"b013",name:"まおうのしろにちかづいた！",desc:"30にちれんぞく",cond:s=>(s.maxStreak||0)>=30},
+  {id:"b014",name:"つきのかいだんをのぼった！",desc:"60にちれんぞく",cond:s=>(s.maxStreak||0)>=60},
+  {id:"b015",name:"でんせつのゴリラ！",desc:"100にちれんぞく",cond:s=>(s.maxStreak||0)>=100},
+  {id:"b020",name:"ゆうしゃのちからめざめた！",desc:"レベル5とうたつ",cond:s=>(s.level||1)>=5},
+  {id:"b021",name:"ちゅうきゅうぼうけんしゃ！",desc:"レベル10とうたつ",cond:s=>(s.level||1)>=10},
+  {id:"b022",name:"つわものといわれた！",desc:"レベル15とうたつ",cond:s=>(s.level||1)>=15},
+  {id:"b023",name:"えいゆうのしょうごうをえた！",desc:"レベル20とうたつ",cond:s=>(s.level||1)>=20},
+  {id:"b024",name:"でんせつのゆうしゃ！",desc:"レベル30とうたつ",cond:s=>(s.level||1)>=30},
+  {id:"b025",name:"ゴリラまおうをたおした！",desc:"レベル50とうたつ",cond:s=>(s.level||1)>=50},
+  {id:"b030",name:"あたらしいわざをおぼえた！",desc:"しゅもく3しゅるい",cond:s=>Object.keys(s.exercises||{}).length>=3},
+  {id:"b031",name:"わざのしょをみつけた！",desc:"しゅもく5しゅるい",cond:s=>Object.keys(s.exercises||{}).length>=5},
+  {id:"b032",name:"ひでんのわざをうけついだ！",desc:"しゅもく10しゅるい",cond:s=>Object.keys(s.exercises||{}).length>=10},
+  {id:"b033",name:"ぼうけんしゃのてほん！",desc:"しゅもく15しゅるい",cond:s=>Object.keys(s.exercises||{}).length>=15},
+  {id:"b034",name:"わざのたつじん！",desc:"しゅもく20しゅるい",cond:s=>Object.keys(s.exercises||{}).length>=20},
+  {id:"b040",name:"やくそうをのんだ！",desc:"プロテイン1ぱい",cond:s=>(s.totalProtein||0)>=1},
+  {id:"b041",name:"まほうのくすりをのんだ！",desc:"プロテイン10ぱい",cond:s=>(s.totalProtein||0)>=10},
+  {id:"b042",name:"せいすいをてにいれた！",desc:"プロテイン30ぱい",cond:s=>(s.totalProtein||0)>=30},
+  {id:"b043",name:"でんせつのエリクサー！",desc:"プロテイン100ぱい",cond:s=>(s.totalProtein||0)>=100},
+  {id:"b050",name:"けいけんちをためた！",desc:"そうXP100",cond:s=>(s.totalXP||0)>=100},
+  {id:"b051",name:"ちからがみなぎってきた！",desc:"そうXP500",cond:s=>(s.totalXP||0)>=500},
+  {id:"b052",name:"つよさがあふれだした！",desc:"そうXP1000",cond:s=>(s.totalXP||0)>=1000},
+  {id:"b053",name:"でんせつのつよさ！",desc:"そうXP5000",cond:s=>(s.totalXP||0)>=5000},
+  {id:"b054",name:"かみのちから！",desc:"そうXP10000",cond:s=>(s.totalXP||0)>=10000},
+  {id:"b060",name:"むねのよろいをてにいれた！",desc:"むねLv3",cond:s=>partLevelInfo((s.partXP||{})["胸"]||0).level>=3},
+  {id:"b061",name:"むねのおうかんをかぶった！",desc:"むねLv5",cond:s=>partLevelInfo((s.partXP||{})["胸"]||0).level>=5},
+  {id:"b062",name:"むねのでんせつ！",desc:"むねLv10",cond:s=>partLevelInfo((s.partXP||{})["胸"]||0).level>=10},
+  {id:"b063",name:"せなかのよろいをてにいれた！",desc:"せなかLv3",cond:s=>partLevelInfo((s.partXP||{})["背中"]||0).level>=3},
+  {id:"b064",name:"せなかのおうかんをかぶった！",desc:"せなかLv5",cond:s=>partLevelInfo((s.partXP||{})["背中"]||0).level>=5},
+  {id:"b065",name:"せなかのでんせつ！",desc:"せなかLv10",cond:s=>partLevelInfo((s.partXP||{})["背中"]||0).level>=10},
+  {id:"b066",name:"あしのよろいをてにいれた！",desc:"あしLv3",cond:s=>partLevelInfo((s.partXP||{})["脚"]||0).level>=3},
+  {id:"b067",name:"あしのおうかんをかぶった！",desc:"あしLv5",cond:s=>partLevelInfo((s.partXP||{})["脚"]||0).level>=5},
+  {id:"b068",name:"あしのでんせつ！",desc:"あしLv10",cond:s=>partLevelInfo((s.partXP||{})["脚"]||0).level>=10},
+  {id:"b069",name:"うでのよろいをてにいれた！",desc:"うでLv3",cond:s=>partLevelInfo((s.partXP||{})["腕"]||0).level>=3},
+  {id:"b070",name:"うでのおうかんをかぶった！",desc:"うでLv5",cond:s=>partLevelInfo((s.partXP||{})["腕"]||0).level>=5},
+  {id:"b071",name:"うでのでんせつ！",desc:"うでLv10",cond:s=>partLevelInfo((s.partXP||{})["腕"]||0).level>=10},
+  {id:"b072",name:"かたのよろいをてにいれた！",desc:"かたLv3",cond:s=>partLevelInfo((s.partXP||{})["肩"]||0).level>=3},
+  {id:"b073",name:"かたのおうかんをかぶった！",desc:"かたLv5",cond:s=>partLevelInfo((s.partXP||{})["肩"]||0).level>=5},
+  {id:"b074",name:"かたのでんせつ！",desc:"かたLv10",cond:s=>partLevelInfo((s.partXP||{})["肩"]||0).level>=10},
+  {id:"b075",name:"ゆうしゃのしょうごう！",desc:"ぜんぶいLv3いじょう",cond:s=>PARTS.every(p=>partLevelInfo((s.partXP||{})[p]||0).level>=3)},
+  {id:"b076",name:"せんしのしょうごう！",desc:"ぜんぶいLv5いじょう",cond:s=>PARTS.every(p=>partLevelInfo((s.partXP||{})[p]||0).level>=5)},
+  {id:"b080",name:"つきのあかりのもとで…",desc:"よるのきろく（0〜5じ）",cond:s=>(s.nightRecord||false)},
+  {id:"b081",name:"あさのめざめ！",desc:"あさのきろく（5〜7じ）",cond:s=>(s.morningRecord||false)},
+  {id:"b082",name:"まひるのたいようのした！",desc:"ひるのきろく（12〜13じ）",cond:s=>(s.noonRecord||false)},
+  {id:"b084",name:"じこベストをこえた！",desc:"はじめてのじこベスト",cond:s=>(s.prCount||0)>=1},
+  {id:"b085",name:"じこベストのつわもの！",desc:"じこベスト10かい",cond:s=>(s.prCount||0)>=10},
+  {id:"b086",name:"じこベストのでんせつ！",desc:"じこベスト30かい",cond:s=>(s.prCount||0)>=30},
+  {id:"b090",name:"おもいいわをもちあげた！",desc:"じゅうりょう50kg",cond:s=>(s.maxWeight||0)>=50},
+  {id:"b091",name:"ひゃっきゃくのかべをこえた！",desc:"じゅうりょう100kg",cond:s=>(s.maxWeight||0)>=100},
+  {id:"b092",name:"てつのゴリラのちから！",desc:"じゅうりょう150kg",cond:s=>(s.maxWeight||0)>=150},
+  {id:"b093",name:"でんせつのじゅうりょう！",desc:"じゅうりょう200kg",cond:s=>(s.maxWeight||0)>=200},
+  {id:"b094",name:"はじめてのセット！",desc:"そうセット10",cond:s=>(s.totalSets||0)>=10},
+  {id:"b095",name:"セットのつわもの！",desc:"そうセット100",cond:s=>(s.totalSets||0)>=100},
+  {id:"b096",name:"セットのでんせつ！",desc:"そうセット500",cond:s=>(s.totalSets||0)>=500},
+  {id:"b097",name:"セットのかみ！",desc:"そうセット1000",cond:s=>(s.totalSets||0)>=1000},
+  {id:"b100",name:"ぼうけんのはじまり",desc:"そうXP200こえ",cond:s=>(s.totalXP||0)>=200},
+  {id:"b101",name:"ちいさなゆうき",desc:"2にちれんぞく",cond:s=>(s.maxStreak||0)>=2},
+  {id:"b102",name:"まものたいじのたつじん",desc:"セッション30かい",cond:s=>(s.totalSessions||0)>=30},
+  {id:"b103",name:"くらやみをてらすひかり",desc:"レベル8とうたつ",cond:s=>(s.level||1)>=8},
+  {id:"b104",name:"てつのいしをうちわった！",desc:"レベル12とうたつ",cond:s=>(s.level||1)>=12},
+  {id:"b105",name:"おうのみちをあるく",desc:"レベル18とうたつ",cond:s=>(s.level||1)>=18},
+  {id:"b106",name:"しんわのはじまり",desc:"レベル25とうたつ",cond:s=>(s.level||1)>=25},
+  {id:"b107",name:"ぜんいのパワー",desc:"ぜんぶいLv2いじょう",cond:s=>PARTS.every(p=>partLevelInfo((s.partXP||{})[p]||0).level>=2)},
+  {id:"b108",name:"かぜをよぶゴリラ",desc:"7にちれんぞく+レベル5",cond:s=>(s.maxStreak||0)>=7&&(s.level||1)>=5},
+  {id:"b109",name:"だいちのちからをうけた",desc:"あしLv5+せなかLv5",cond:s=>partLevelInfo((s.partXP||{})["脚"]||0).level>=5&&partLevelInfo((s.partXP||{})["背中"]||0).level>=5},
+  {id:"b110",name:"てんくうのつるぎをてにいれた",desc:"むね+かた+うでLv5",cond:s=>["胸","肩","腕"].every(p=>partLevelInfo((s.partXP||{})[p]||0).level>=5)},
+  {id:"b111",name:"もくもくとはたらくもの",desc:"いちにちに3かいきろく",cond:s=>(s.maxDailySessions||0)>=3},
+  {id:"b112",name:"きわめしもの",desc:"じゅうりょう80kgいじょう",cond:s=>(s.maxWeight||0)>=80},
+  {id:"b113",name:"ゴリラのたましい",desc:"セッション75かい",cond:s=>(s.totalSessions||0)>=75},
+  {id:"b114",name:"てんさいゴリラ",desc:"しゅもく8しゅるい+レベル10",cond:s=>Object.keys(s.exercises||{}).length>=8&&(s.level||1)>=10},
+  {id:"b115",name:"しんわのゴリラとなった！",desc:"レベル40とうたつ",cond:s=>(s.level||1)>=40},
+  {id:"b116",name:"ぜんせかいのへいわ",desc:"ぜんぶいLv10いじょう",cond:s=>PARTS.every(p=>partLevelInfo((s.partXP||{})[p]||0).level>=10)},
 ];
-const BBGS=["#e0a85c","#e05c5c","#a05ce0","#5c8ee0","#5cb87a","#d4a800","#7c6cdb"];
-const STAGE_LABELS=["赤ちゃんゴリラ","子ゴリラ","若ゴリラ","大人ゴリラ","最強ゴリラ"];
 
-function getStage(l){if(l<3)return 0;if(l<6)return 1;if(l<10)return 2;if(l<15)return 3;return 4;}
+function DQBar({value,max,color,width="100%"}){
+  const pct=Math.min(Math.round((value/max)*100),100);
+  return(
+    <div style={{width,height:10,background:"#001100",border:"1px solid #336633",display:"inline-block",verticalAlign:"middle"}}>
+      <div style={{height:"100%",width:`${pct}%`,background:color,transition:"width 0.4s"}}/>
+    </div>
+  );
+}
 
-function Gorilla(props){
-  const partXP=props.partXP, stage=props.stage, badges=props.badges;
-  const s=Math.min(Math.max(stage,0),4);
-  const pLv=function(p){return partLevelInfo(partXP[p]||0).level;};
-  const col=function(p){return pLv(p)>=1?PART_COLOR[p]:"#666";};
-  const op=function(p){return Math.min(0.35+pLv(p)*0.13,1.0);};
-  const sizes=[
-    {bw:28,bh:22,hw:22,hh:18,aw:10,ah:7,lw:8,lh:12,ew:8,eh:5,belly:true},
-    {bw:36,bh:28,hw:26,hh:21,aw:13,ah:9,lw:10,lh:16,ew:10,eh:6,belly:true},
-    {bw:46,bh:36,hw:32,hh:25,aw:17,ah:11,lw:13,lh:20,ew:14,eh:8,belly:false},
-    {bw:58,bh:44,hw:38,hh:29,aw:22,ah:14,lw:16,lh:25,ew:18,eh:10,belly:false},
-    {bw:72,bh:54,hw:46,hh:34,aw:28,ah:17,lw:20,lh:30,ew:22,eh:12,belly:false},
-  ];
-  const P=sizes[s];
-  const cx=70,cy=85,bt=cy-P.bh/2;
-  const eb=BADGES.filter(function(b){return badges.includes(b.id);});
+function Stepper({value,onChange,step=5,min=0}){
+  return(
+    <div style={{display:"flex",alignItems:"center"}}>
+      <button className="dq-btn" onClick={()=>onChange(Math.max(min,value-step))}
+        style={{width:36,textAlign:"center",padding:"6px",fontSize:16}}>◀</button>
+      <span style={{flex:1,textAlign:"center",fontFamily:"'DotGothic16',monospace",
+        fontSize:14,color:DQ.gold,background:"#000011",padding:"6px 0",
+        border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}}>{value}</span>
+      <button className="dq-btn" onClick={()=>onChange(value+step)}
+        style={{width:36,textAlign:"center",padding:"6px",fontSize:16}}>▶</button>
+    </div>
+  );
+}
 
-  const svgEl=function(tag,attrs){
-    const children=Array.prototype.slice.call(arguments,2);
-    return React.createElement.apply(React,[tag,attrs].concat(children));
-  };
+function LevelUpOverlay({level,onDone}){
+  useEffect(()=>{const t=setTimeout(onDone,2800);return()=>clearTimeout(t);},[onDone]);
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
+      <div style={{animation:"flash 0.3s ease 2",background:"rgba(255,255,100,0.12)",position:"absolute",inset:0}}/>
+      <div className="dq-win" style={{padding:"20px 32px",textAlign:"center",animation:"levelup 2.8s ease forwards",border:"4px solid #ffdd00"}}>
+        <div style={{fontSize:13,color:DQ.gold,marginBottom:8}}>✦ ✦ ✦</div>
+        <div style={{fontSize:18,color:DQ.gold,lineHeight:1.8}}>
+          レベルが あがった！<br/>
+          <span style={{fontSize:24,color:"#ffffff"}}>Lv.{level}</span>
+        </div>
+        <div style={{fontSize:13,color:DQ.gold,marginTop:8}}>✦ ✦ ✦</div>
+      </div>
+    </div>
+  );
+}
 
-  const badgeNodes=eb.map(function(b,i){
-    const angle=(i/Math.max(eb.length,1))*Math.PI*2-Math.PI/2;
-    const r=54,bx=cx+Math.cos(angle)*r,by=cy+Math.sin(angle)*r;
-    return h("g",{key:b.id},
-      h("circle",{cx:bx,cy:by,r:11,fill:BBGS[i%BBGS.length],opacity:0.25}),
-      h("text",{x:bx,y:by+5,textAnchor:"middle",fontSize:12},b.icon)
-    );
+function XPPop({xp,onDone}){
+  useEffect(()=>{const t=setTimeout(onDone,1400);return()=>clearTimeout(t);},[onDone]);
+  return(
+    <div style={{position:"fixed",top:"30%",left:"50%",transform:"translateX(-50%)",
+      zIndex:900,pointerEvents:"none",animation:"xpPop 1.4s ease forwards",
+      fontFamily:"'DotGothic16',monospace",fontSize:20,color:DQ.gold,textShadow:"0 0 8px #ffdd00"}}>
+      ＋{xp}XP
+    </div>
+  );
+}
+
+function BadgePop({badge,onDone}){
+  useEffect(()=>{const t=setTimeout(onDone,3000);return()=>clearTimeout(t);},[onDone]);
+  return(
+    <div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",
+      zIndex:900,pointerEvents:"none",width:"85%",maxWidth:380,animation:"badgePop 3s ease forwards"}}>
+      <div className="dq-win" style={{padding:"12px 16px",border:"3px solid #ffdd00",textAlign:"center"}}>
+        <div style={{fontSize:11,color:DQ.gold,marginBottom:4}}>★ バッジをてにいれた！</div>
+        <div style={{fontSize:14,color:DQ.text}}>{badge.name}</div>
+        <div style={{fontSize:11,color:DQ.gray,marginTop:2}}>{badge.desc}</div>
+      </div>
+    </div>
+  );
+}
+
+function Win({children,style}){
+  return <div className="dq-win" style={{padding:"10px 12px",marginBottom:8,...style}}>{children}</div>;
+}
+
+const INIT={totalXP:0,partXP:{},exercises:{},sessions:[],badges:[],
+  totalSessions:0,maxStreak:0,level:1,totalProtein:0,
+  nightRecord:false,morningRecord:false,noonRecord:false,
+  prCount:0,totalSets:0,maxWeight:0,maxDailySessions:0};
+const SK="gorilla_quest_v3";
+
+export default function App(){
+  const [data,setData]=useState(()=>{
+    try{return JSON.parse(localStorage.getItem(SK)||"null")||INIT;}
+    catch{return INIT;}
   });
-
-  const mouthPath = s<=1
-    ? h("path",{d:"M"+(cx-P.hw*0.1)+","+(bt-P.hh*0.06)+" Q"+cx+","+(bt+P.hh*0.04)+" "+(cx+P.hw*0.1)+","+(bt-P.hh*0.06),stroke:"#5a3a08",strokeWidth:1.5,fill:"none",strokeLinecap:"round"})
-    : s>=4
-      ? h("path",{d:"M"+(cx-P.hw*0.12)+","+(bt-P.hh*0.04)+" Q"+cx+","+(bt-P.hh*0.12)+" "+(cx+P.hw*0.12)+","+(bt-P.hh*0.04),stroke:"#5a3a08",strokeWidth:2,fill:"none",strokeLinecap:"round"})
-      : h("line",{x1:cx-P.hw*0.09,y1:bt-P.hh*0.05,x2:cx+P.hw*0.09,y2:bt-P.hh*0.05,stroke:"#5a3a08",strokeWidth:1.5,strokeLinecap:"round"});
-
-  return h("svg",{width:140,height:170,viewBox:"0 0 140 170",style:{display:"block",margin:"0 auto",overflow:"visible"}},
-    badgeNodes,
-    h("rect",{x:cx-P.lw-2,y:bt+P.bh-4,width:P.lw,height:P.lh,rx:P.lw/2,fill:col("脚"),opacity:op("脚")}),
-    h("rect",{x:cx+2,y:bt+P.bh-4,width:P.lw,height:P.lh,rx:P.lw/2,fill:col("脚"),opacity:op("脚")}),
-    h("rect",{x:cx-P.bw/2,y:bt,width:P.bw,height:P.bh,rx:P.bw*0.22,fill:col("背中"),opacity:op("背中")}),
-    h("ellipse",{cx:cx,cy:bt+P.bh*0.42,rx:P.bw*0.34,ry:P.bh*0.3,fill:col("胸"),opacity:op("胸")}),
-    P.belly?h("ellipse",{cx:cx,cy:bt+P.bh*0.62,rx:P.bw*0.25,ry:P.bh*0.2,fill:"#c8a87a",opacity:0.55}):null,
-    h("ellipse",{cx:cx-P.bw/2-P.ew*0.1,cy:bt+P.bh*0.18,rx:P.ew,ry:P.eh,fill:col("肩"),opacity:op("肩")}),
-    h("ellipse",{cx:cx+P.bw/2+P.ew*0.1,cy:bt+P.bh*0.18,rx:P.ew,ry:P.eh,fill:col("肩"),opacity:op("肩")}),
-    h("rect",{x:cx-P.bw/2-P.aw+2,y:bt+P.bh*0.22,width:P.aw,height:P.ah*1.6,rx:P.aw/2,fill:col("腕"),opacity:op("腕")}),
-    h("rect",{x:cx+P.bw/2-2,y:bt+P.bh*0.22,width:P.aw,height:P.ah*1.6,rx:P.aw/2,fill:col("腕"),opacity:op("腕")}),
-    h("rect",{x:cx-P.bw/2-P.aw*0.7+2,y:bt+P.bh*0.22+P.ah*1.6-2,width:P.aw*0.75,height:P.ah*1.4,rx:P.aw*0.4,fill:col("腕"),opacity:op("腕")*0.85}),
-    h("rect",{x:cx+P.bw/2+2,y:bt+P.bh*0.22+P.ah*1.6-2,width:P.aw*0.75,height:P.ah*1.4,rx:P.aw*0.4,fill:col("腕"),opacity:op("腕")*0.85}),
-    h("circle",{cx:cx-P.bw/2-P.aw*0.35+2,cy:bt+P.bh*0.22+P.ah*3+4,r:P.aw*0.4,fill:col("腕"),opacity:op("腕")}),
-    h("circle",{cx:cx+P.bw/2+P.aw*0.4,cy:bt+P.bh*0.22+P.ah*3+4,r:P.aw*0.4,fill:col("腕"),opacity:op("腕")}),
-    h("ellipse",{cx:cx,cy:bt-P.hh*0.35,rx:P.hw/2,ry:P.hh/2,fill:"#8B6914"}),
-    s>=3?h("ellipse",{cx:cx,cy:bt-P.hh*0.65,rx:P.hw/2*0.85,ry:P.hh*0.15,fill:"#6b4f10"}):null,
-    h("circle",{cx:cx-P.hw/2+2,cy:bt-P.hh*0.35,r:P.hh*0.2,fill:"#7a5a10"}),
-    h("circle",{cx:cx+P.hw/2-2,cy:bt-P.hh*0.35,r:P.hh*0.2,fill:"#7a5a10"}),
-    h("ellipse",{cx:cx,cy:bt-P.hh*0.2,rx:P.hw*0.34,ry:P.hh*0.32,fill:"#c8a060"}),
-    h("circle",{cx:cx-P.hw*0.18,cy:bt-P.hh*0.42,r:s>=3?3.5:2.5,fill:"#111"}),
-    h("circle",{cx:cx+P.hw*0.18,cy:bt-P.hh*0.42,r:s>=3?3.5:2.5,fill:"#111"}),
-    h("circle",{cx:cx-P.hw*0.15,cy:bt-P.hh*0.46,r:1,fill:"#fff",opacity:0.7}),
-    h("circle",{cx:cx+P.hw*0.21,cy:bt-P.hh*0.46,r:1,fill:"#fff",opacity:0.7}),
-    h("ellipse",{cx:cx,cy:bt-P.hh*0.18,rx:P.hw*0.1,ry:P.hh*0.09,fill:"#5a3a08"}),
-    h("circle",{cx:cx-P.hw*0.06,cy:bt-P.hh*0.19,r:P.hw*0.035,fill:"#3a2505"}),
-    h("circle",{cx:cx+P.hw*0.06,cy:bt-P.hh*0.19,r:P.hw*0.035,fill:"#3a2505"}),
-    mouthPath,
-    s===4?h("text",{x:cx-P.bw/2-14,y:bt+P.bh*0.5,fontSize:10,fill:"#e0a85c",opacity:0.8},"💢"):null,
-    s===4?h("text",{x:cx+P.bw/2+4,y:bt+P.bh*0.5,fontSize:10,fill:"#e0a85c",opacity:0.8},"💢"):null
-  );
-}
-
-function Stepper(props){
-  const value=props.value,onChange=props.onChange,step=props.step||5,min=props.min||0;
-  return h("div",{style:{display:"flex",alignItems:"center",background:"#1a1a2e",borderRadius:10,border:"1px solid #444",overflow:"hidden"}},
-    h("button",{onClick:function(){onChange(Math.max(min,value-step));},style:{width:40,height:40,border:"none",background:"transparent",color:"#e0e0e0",fontSize:20,cursor:"pointer"}},"-"),
-    h("span",{style:{flex:1,textAlign:"center",fontSize:15,fontWeight:500,color:"#e0e0e0",userSelect:"none"}},value),
-    h("button",{onClick:function(){onChange(value+step);},style:{width:40,height:40,border:"none",background:"transparent",color:"#e0e0e0",fontSize:20,cursor:"pointer"}},"+")
-  );
-}
-
-const INIT={totalXP:0,partXP:{},exercises:{},sessions:[],badges:[],totalSessions:0,maxStreak:0,level:1,totalProtein:0};
-const SK="gorilla_quest_v1";
-
-function App(){
-  const [data,setData]=useState(function(){try{return JSON.parse(localStorage.getItem(SK)||"null")||INIT;}catch(e){return INIT;}});
   const [tab,setTab]=useState("log");
   const [part,setPart]=useState("胸");
   const [exercise,setExercise]=useState(PRESETS["胸"][0]);
@@ -146,215 +229,356 @@ function App(){
   const [sets,setSets]=useState(3);
   const [protein,setProtein]=useState(1);
   const [recentLog,setRecentLog]=useState([]);
-  const [toast,setToast]=useState(null);
+  const [lvAnim,setLvAnim]=useState(null);
+  const [xpAnim,setXpAnim]=useState(null);
+  const [badgeAnim,setBadgeAnim]=useState(null);
+  const [showReset,setShowReset]=useState(false);
+  const badgeQueue=useRef([]);
 
-  useEffect(function(){setExercise(PRESETS[part][0]);},[part]);
+  // 種目変更時：部位のプリセット先頭 & ベスト重量をデフォルトに
+  useEffect(()=>{
+    const firstEx=PRESETS[part][0];
+    setExercise(firstEx);
+    const best=(data.exercises[firstEx]?.maxWeight)||60;
+    setWeight(best);
+  },[part]);
 
-  const save=useCallback(function(d){setData(d);try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){};},[]);
-  const showToast=function(msg,color){setToast({msg:msg,color:color||"#5cb87a"});setTimeout(function(){setToast(null);},2800);};
+  // 種目変更時：ベスト重量をデフォルトに
+  useEffect(()=>{
+    const best=(data.exercises[exercise]?.maxWeight)||60;
+    setWeight(best);
+  },[exercise]);
+
+  const save=useCallback(d=>{
+    setData(d);
+    try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){}
+  },[]);
+
+  const popNextBadge=useCallback(()=>{
+    if(badgeQueue.current.length>0) setBadgeAnim(badgeQueue.current.shift());
+  },[]);
 
   function handleRecord(){
     const today=getToday();
+    const hour=getHour();
     const isNew=!data.exercises[exercise];
-    const prevMax=(data.exercises[exercise]&&data.exercises[exercise].maxWeight)||0;
+    const prevMax=(data.exercises[exercise]?.maxWeight)||0;
     const isPR=weight>prevMax&&!isNew;
     let xp=sets*5;
-    const xl=[sets+"セット x5 +"+sets*5+"XP"];
-    if(isNew){xp+=20;xl.push("新種目 +20XP");}
-    if(isPR){xp+=30;xl.push("自己ベスト +30XP");}
-    const ns=data.sessions.concat([today]);
+    const xl=[`${sets}×5 +${sets*5}XP`];
+    if(isNew){xp+=20;xl.push("しんしゅもく +20XP");}
+    if(isPR){xp+=30;xl.push("じこベスト +30XP");}
+    const ns=[...data.sessions,today];
     const streak=getStreak(ns);
-    if(streak>=3&&streak>getStreak(data.sessions)){xp+=50;xl.push("連続ボーナス +50XP");}
-    const ntxp=data.totalXP+xp;
-    const li=levelInfo(ntxp);
-    const np=Object.assign({},data.partXP);
-    np[part]=(np[part]||0)+(sets*5);
-    const ne=Object.assign({},data.exercises);
-    ne[exercise]={maxWeight:Math.max(weight,prevMax),count:((ne[exercise]&&ne[exercise].count)||0)+1,part:part};
-    const d=Object.assign({},data,{totalXP:ntxp,partXP:np,exercises:ne,sessions:ns,
-      totalSessions:(data.totalSessions||0)+1,maxStreak:Math.max(data.maxStreak||0,streak),level:li.level});
-    d.badges=(data.badges||[]).slice();
-    BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d))d.badges.push(b.id);});
+    if(streak>=3&&streak>getStreak(data.sessions)){xp+=50;xl.push("れんぞくボーナス +50XP");}
+    const newTotalXP=data.totalXP+xp;
+    const prevLevel=levelInfo(data.totalXP).level;
+    const {level}=levelInfo(newTotalXP);
+    const newPartXP={...data.partXP};
+    newPartXP[part]=(newPartXP[part]||0)+(sets*5);
+    const newExercises={...data.exercises};
+    newExercises[exercise]={maxWeight:Math.max(weight,prevMax),count:(newExercises[exercise]?.count||0)+1,part};
+    const todaySessions=ns.filter(d=>d===today).length;
+    const d={...data,totalXP:newTotalXP,partXP:newPartXP,exercises:newExercises,sessions:ns,
+      totalSessions:(data.totalSessions||0)+1,maxStreak:Math.max(data.maxStreak||0,streak),level,
+      prCount:(data.prCount||0)+(isPR?1:0),totalSets:(data.totalSets||0)+sets,
+      maxWeight:Math.max(data.maxWeight||0,weight),
+      maxDailySessions:Math.max(data.maxDailySessions||0,todaySessions),
+      nightRecord:data.nightRecord||(hour>=0&&hour<5),
+      morningRecord:data.morningRecord||(hour>=5&&hour<7),
+      noonRecord:data.noonRecord||(hour>=12&&hour<13),
+    };
+    d.badges=[...(data.badges||[])];
+    const newBadges=[];
+    BADGES.forEach(b=>{if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);newBadges.push(b);}});
     save(d);
-    setRecentLog(function(prev){
-      return [{exercise:exercise,part:part,weight:weight,reps:reps,sets:sets,xp:xp,xl:xl,
-        time:new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})}].concat(prev.slice(0,9));
-    });
-    showToast("+"+xp+"XP 獲得！");
+    setRecentLog(prev=>[{exercise,part,weight,reps,sets,xp,xl,
+      time:new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})},...prev.slice(0,9)]);
+    setXpAnim(xp);
+    if(level>prevLevel) setTimeout(()=>setLvAnim(level),800);
+    if(newBadges.length>0){
+      badgeQueue.current=[...badgeQueue.current,...newBadges];
+      if(!badgeAnim) popNextBadge();
+    }
   }
 
   function handleProtein(){
     const xp=protein*10;
-    const ntxp=data.totalXP+xp;
-    const li=levelInfo(ntxp);
-    const np=Object.assign({},data.partXP);
-    PARTS.forEach(function(p){np[p]=(np[p]||0)+protein*2;});
-    const d=Object.assign({},data,{totalXP:ntxp,partXP:np,level:li.level,totalProtein:(data.totalProtein||0)+protein});
-    d.badges=(data.badges||[]).slice();
-    BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d))d.badges.push(b.id);});
+    const newTotalXP=data.totalXP+xp;
+    const {level}=levelInfo(newTotalXP);
+    const newPartXP={...data.partXP};
+    PARTS.forEach(p=>{newPartXP[p]=(newPartXP[p]||0)+protein*2;});
+    const d={...data,totalXP:newTotalXP,partXP:newPartXP,level,totalProtein:(data.totalProtein||0)+protein};
+    d.badges=[...(data.badges||[])];
+    const newBadges=[];
+    BADGES.forEach(b=>{if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);newBadges.push(b);}});
     save(d);
-    showToast("プロテイン"+protein+"杯 +"+xp+"XP！","#5c8ee0");
+    setXpAnim(xp);
+    if(newBadges.length>0){
+      badgeQueue.current=[...badgeQueue.current,...newBadges];
+      if(!badgeAnim) popNextBadge();
+    }
   }
 
-  const li=levelInfo(data.totalXP||0);
-  const level=li.level,current=li.current,needed=li.needed;
-  const pct=Math.round((current/needed)*100);
+  function handleReset(){
+    save(INIT);
+    setRecentLog([]);
+    setShowReset(false);
+  }
+
+  const {level,current,needed}=levelInfo(data.totalXP||0);
   const stage=getStage(level);
+  const earnedCount=(data.badges||[]).length;
 
-  function ts(t){
-    return {flex:1,padding:"9px 0",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500,
-      background:tab===t?"rgba(92,184,122,0.18)":"rgba(255,255,255,0.05)",
-      color:tab===t?"#5cb87a":"#aaa",
-      boxShadow:tab===t?"inset 0 2px 4px rgba(0,0,0,0.3)":"inset 0 1px 3px rgba(0,0,0,0.2)",transition:"all 0.15s"};
-  }
-  const card={background:"#252540",borderRadius:12,padding:"12px 14px",marginBottom:8};
+  const ts=t=>({flex:1,padding:"9px 0",border:"none",borderRadius:0,cursor:"pointer",fontSize:12,fontWeight:500,
+    fontFamily:"'DotGothic16',monospace",
+    background:tab===t?"rgba(92,184,122,0.18)":"rgba(255,255,255,0.05)",
+    color:tab===t?"#5cb87a":"#aaa",
+    boxShadow:tab===t?"inset 0 2px 4px rgba(0,0,0,0.3)":"inset 0 1px 3px rgba(0,0,0,0.2)",
+    transition:"all 0.15s"});
 
-  return h("div",{style:{maxWidth:430,margin:"0 auto",padding:"12px 14px"}},
-    toast?h("div",{style:{position:"fixed",top:18,left:"50%",transform:"translateX(-50%)",background:toast.color,color:"#fff",padding:"10px 26px",borderRadius:24,fontSize:14,fontWeight:500,zIndex:999}},toast.msg):null,
+  return(
+    <div style={{maxWidth:430,margin:"0 auto",padding:"10px 12px",background:DQ.bg,minHeight:"100vh",fontFamily:"'DotGothic16',monospace"}}>
+      <style>{G_STYLE}</style>
 
-    // header
-    h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}},
-      h("div",null,
-        h("div",{style:{fontSize:20,fontWeight:500}},"Gorilla Quest"),
-        h("div",{style:{fontSize:11,color:"#aaa"}},STAGE_LABELS[stage]+" · Lv."+level+" · "+(data.totalXP||0)+"XP")
-      ),
-      h("div",{style:{textAlign:"right"}},
-        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:3}},"Lv."+level+" → "+(level+1)),
-        h("div",{style:{width:110,height:7,borderRadius:4,background:"#333",overflow:"hidden"}},
-          h("div",{style:{height:"100%",width:pct+"%",background:"#5cb87a",borderRadius:4,transition:"width 0.4s"}})
-        ),
-        h("div",{style:{fontSize:11,color:"#666",marginTop:2}},current+"/"+needed+" XP")
-      )
-    ),
+      {xpAnim&&<XPPop xp={xpAnim} onDone={()=>setXpAnim(null)}/>}
+      {lvAnim&&<LevelUpOverlay level={lvAnim} onDone={()=>setLvAnim(null)}/>}
+      {badgeAnim&&<BadgePop badge={badgeAnim} onDone={()=>{setBadgeAnim(null);setTimeout(popNextBadge,400);}}/>}
 
-    // avatar
-    h("div",{style:Object.assign({},card,{padding:"16px 8px 10px",textAlign:"center"})},
-      h(Gorilla,{partXP:data.partXP||{},stage:stage,badges:data.badges||[]}),
-      h("div",{style:{display:"flex",flexWrap:"wrap",gap:5,justifyContent:"center",marginTop:8}},
-        PARTS.map(function(p){
-          const pi=partLevelInfo((data.partXP||{})[p]||0);
-          return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",borderRadius:20,background:PART_COLOR[p]+"22",border:"1px solid "+PART_COLOR[p]+"66",fontSize:11}},
-            h("span",{style:{width:8,height:8,borderRadius:"50%",background:PART_COLOR[p],display:"inline-block"}}),
-            h("span",{style:{color:PART_COLOR[p],fontWeight:600}},p),
-            h("span",{style:{color:"#666"}},"Lv."+pi.level)
-          );
-        })
-      )
-    ),
+      {/* title */}
+      <div style={{textAlign:"center",marginBottom:8}}>
+        <div style={{fontSize:20,color:DQ.gold,letterSpacing:2}}>★ GORILLA QUEST ★</div>
+        <div style={{fontSize:11,color:DQ.gray}}>{STAGE_LABELS[stage]}</div>
+      </div>
 
-    // tabs
-    h("div",{style:{display:"flex",gap:4,margin:"10px 0",background:"rgba(0,0,0,0.3)",padding:4,borderRadius:12,boxShadow:"inset 0 2px 6px rgba(0,0,0,0.3)"}},
-      [["log","記録"],["history","履歴"],["badge","バッジ"]].map(function(item){
-        return h("button",{key:item[0],style:ts(item[0]),onClick:function(){setTab(item[0]);}},item[1]);
-      })
-    ),
+      {/* avatar */}
+      <Win>
+        <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+          <div style={{flexShrink:0,width:100,height:100,display:"flex",alignItems:"center",justifyContent:"center",background:"#000022",border:"2px solid #333366"}}>
+            <img
+              src={GORILLA_IMGS[stage]}
+              alt={STAGE_LABELS[stage]}
+              style={{maxWidth:96,maxHeight:96,objectFit:"contain",imageRendering:"pixelated"}}
+              onError={e=>{e.target.style.display="none";e.target.nextSibling.style.display="flex";}}
+            />
+            <div style={{display:"none",width:96,height:96,alignItems:"center",justifyContent:"center",fontSize:11,color:"#666688",textAlign:"center"}}>
+              画像を<br/>アップロード<br/>してね
+            </div>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:13,color:DQ.gold,marginBottom:6}}>ゴリラ</div>
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+              <span style={{fontSize:11,color:DQ.gray,width:24}}>LV</span>
+              <span style={{fontSize:16,color:DQ.text}}>{level}</span>
+            </div>
+            <div style={{fontSize:11,color:DQ.gray,marginBottom:2}}>けいけんち</div>
+            <DQBar value={current} max={needed} color="#44ff44"/>
+            <div style={{fontSize:10,color:DQ.gray,marginTop:1}}>{current}/{needed}</div>
+            <div style={{fontSize:11,color:DQ.gray,marginTop:6,marginBottom:2}}>そうXP</div>
+            <div style={{fontSize:13,color:DQ.gold}}>{data.totalXP||0}</div>
+          </div>
+        </div>
+        <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 10px"}}>
+          {PARTS.map(p=>{
+            const pi=partLevelInfo((data.partXP||{})[p]||0);
+            return(
+              <div key={p} style={{display:"flex",alignItems:"center",gap:4}}>
+                <span style={{fontSize:10,color:PART_COLOR[p],width:22}}>{p}</span>
+                <DQBar value={pi.current} max={pi.needed} color={PART_COLOR[p]} width="60px"/>
+                <span style={{fontSize:10,color:DQ.gray}}>L{pi.level}</span>
+              </div>
+            );
+          })}
+        </div>
+      </Win>
 
-    // LOG tab
-    tab==="log"?h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
-      h("div",{style:{display:"flex",gap:5}},
-        PARTS.map(function(p){
-          return h("button",{key:p,onClick:function(){setPart(p);},style:{flex:1,padding:"8px 0",border:"1.5px solid "+(part===p?PART_COLOR[p]:"#444"),borderRadius:8,background:part===p?PART_COLOR[p]+"22":"transparent",color:part===p?PART_COLOR[p]:"#aaa",fontSize:12,fontWeight:500,cursor:"pointer"}},p);
-        })
-      ),
-      h("select",{value:exercise,onChange:function(e){setExercise(e.target.value);},style:{width:"100%",padding:"10px 12px",borderRadius:8,background:"#252540",border:"1px solid #444",color:"#e0e0e0",fontSize:15}},
-        PRESETS[part].map(function(e){return h("option",{key:e,value:e},e);})
-      ),
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
-        [["重量","kg",weight,setWeight,5,0],["回数","回",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(function(item){
-          return h("div",{key:item[0]},
-            h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4,textAlign:"center"}},item[0]),
-            h(Stepper,{value:item[2],onChange:item[3],step:item[4],min:item[5]}),
-            h("div",{style:{textAlign:"center",fontSize:12,marginTop:3,color:"#aaa"}},item[2]+item[1])
-          );
-        })
-      ),
-      h("button",{onClick:handleRecord,style:{background:"#5cb87a",color:"#fff",border:"none",borderRadius:10,padding:"13px",fontSize:16,fontWeight:500,cursor:"pointer",width:"100%"}},"トレーニング記録"),
-      h("div",{style:Object.assign({},card,{display:"flex",alignItems:"center",gap:10})},
-        h("span",{style:{fontSize:13,color:"#aaa",whiteSpace:"nowrap"}},"プロテイン"),
-        h("div",{style:{flex:1}},h(Stepper,{value:protein,onChange:setProtein,step:1,min:1})),
-        h("span",{style:{fontSize:13,color:"#aaa",whiteSpace:"nowrap"}},protein+"杯"),
-        h("button",{onClick:handleProtein,style:{background:"#5c8ee0",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}},"+"+protein*10+"XP")
-      ),
-      recentLog.length>0?h("div",null,
-        h("div",{style:{fontSize:12,color:"#aaa",marginBottom:6}},"今日の記録"),
-        recentLog.map(function(l,i){
-          return h("div",{key:i,style:card},
-            h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
-              h("span",{style:{fontWeight:500,fontSize:14}},l.exercise),
-              h("span",{style:{fontSize:12,color:"#5cb87a",fontWeight:600}},"+"+l.xp+"XP")
-            ),
-            h("div",{style:{fontSize:12,color:"#aaa",marginTop:2}},
-              h("span",{style:{color:PART_COLOR[l.part]}},l.part),
-              " | "+l.weight+"kg x "+l.reps+"回 x "+l.sets+"set | "+l.time
-            ),
-            h("div",{style:{fontSize:11,color:"#666",marginTop:2}},l.xl.join("  "))
-          );
-        })
-      ):null
-    ):null,
+      {/* tabs */}
+      <div style={{display:"flex",gap:2,marginBottom:8,background:"rgba(0,0,0,0.3)",boxShadow:"inset 0 2px 6px rgba(0,0,0,0.3)"}}>
+        {[["log","▶ きろく"],["history","▶ れきし"],["badge","▶ バッジ"]].map(([t,label])=>(
+          <button key={t} style={ts(t)} onClick={()=>setTab(t)}>{label}</button>
+        ))}
+      </div>
 
-    // HISTORY tab
-    tab==="history"?h("div",null,
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}},
-        [["総セッション",data.totalSessions||0,"回"],["最長連続",data.maxStreak||0,"日"],
-         ["種目数",Object.keys(data.exercises||{}).length,"種"],["プロテイン",data.totalProtein||0,"杯"]].map(function(item){
-          return h("div",{key:item[0],style:{background:"#252540",borderRadius:10,padding:"12px"}},
-            h("div",{style:{fontSize:11,color:"#aaa"}},item[0]),
-            h("div",{style:{fontSize:22,fontWeight:500,marginTop:2}},item[1],h("span",{style:{fontSize:13,fontWeight:400}},item[2]))
-          );
-        })
-      ),
-      h("div",{style:Object.assign({},card,{marginBottom:12})},
-        h("div",{style:{fontSize:13,fontWeight:500,marginBottom:10,color:"#aaa"}},"部位別レベル"),
-        PARTS.map(function(p){
-          const pi=partLevelInfo((data.partXP||{})[p]||0);
-          const pp=Math.round((pi.current/pi.needed)*100);
-          return h("div",{key:p,style:{marginBottom:8}},
-            h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}},
-              h("span",{style:{color:PART_COLOR[p],fontWeight:500}},p+" Lv."+pi.level),
-              h("span",{style:{color:"#666"}},pi.current+"/"+pi.needed)
-            ),
-            h("div",{style:{height:6,borderRadius:3,background:"#333",overflow:"hidden"}},
-              h("div",{style:{height:"100%",width:pp+"%",background:PART_COLOR[p],borderRadius:3,transition:"width 0.4s"}})
-            )
-          );
-        })
-      ),
-      Object.keys(data.exercises||{}).length>0?h("div",null,
-        h("div",{style:{fontSize:13,fontWeight:500,marginBottom:8,color:"#aaa"}},"種目ベスト"),
-        Object.entries(data.exercises||{}).map(function(entry){
-          const name=entry[0],e=entry[1];
-          return h("div",{key:name,style:Object.assign({},card,{display:"flex",justifyContent:"space-between",alignItems:"center"})},
-            h("div",null,
-              h("span",{style:{fontSize:14}},name),
-              h("span",{style:{fontSize:11,marginLeft:6,color:PART_COLOR[e.part]||"#666"}},e.part)
-            ),
-            h("span",{style:{fontSize:13,color:"#aaa"}},e.maxWeight+"kg x "+e.count+"回")
-          );
-        })
-      ):h("div",{style:{color:"#666",fontSize:14,textAlign:"center",padding:32}},"まだ記録がありません")
-    ):null,
+      {/* LOG */}
+      {tab==="log"&&(
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          <Win>
+            <div style={{fontSize:11,color:DQ.gray,marginBottom:6}}>▼ ぶいをえらぶ</div>
+            <div style={{display:"flex",gap:3}}>
+              {PARTS.map(p=>(
+                <button key={p} className={`dq-btn ${part===p?"active":""}`} onClick={()=>setPart(p)}
+                  style={{flex:1,fontSize:11,padding:"6px 2px",textAlign:"center",
+                    color:part===p?PART_COLOR[p]:DQ.gray,
+                    borderBottom:part===p?`2px solid ${PART_COLOR[p]}`:"2px solid transparent"}}>
+                  {p}
+                </button>
+              ))}
+            </div>
+          </Win>
 
-    // BADGE tab
-    tab==="badge"?h("div",null,
-      h("div",{style:{fontSize:12,color:"#aaa",marginBottom:10}},"獲得したバッジはゴリラの背景に飾られます"),
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}},
-        BADGES.map(function(b,i){
-          const unlocked=(data.badges||[]).includes(b.id);
-          return h("div",{key:b.id,style:{background:"#252540",borderRadius:12,padding:"14px 12px",textAlign:"center",border:"1px solid "+(unlocked?BBGS[i%BBGS.length]+"88":"#333"),opacity:unlocked?1:0.45}},
-            h("div",{style:{fontSize:26,marginBottom:6}},b.icon),
-            h("div",{style:{fontSize:13,fontWeight:500}},b.label),
-            h("div",{style:{fontSize:11,marginTop:4,color:unlocked?"#5cb87a":"#666"}},unlocked?"解放済み":"未解放")
-          );
-        })
-      )
-    ):null,
+          <Win>
+            <div style={{fontSize:11,color:DQ.gray,marginBottom:4}}>▼ しゅもくをえらぶ</div>
+            <select className="dq-input" value={exercise}
+              onChange={e=>setExercise(e.target.value)}
+              style={{width:"100%",fontSize:13}}>
+              {PRESETS[part].map(e=><option key={e} value={e}>{e}</option>)}
+            </select>
+          </Win>
 
-    h("div",{style:{height:24}})
+          <Win>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+              {[["じゅうりょう","kg",weight,setWeight,5,0],["かいすう","かい",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(([label,unit,val,setter,step,mn])=>(
+                <div key={label}>
+                  <div style={{fontSize:10,color:DQ.gray,marginBottom:4,textAlign:"center"}}>{label}</div>
+                  <Stepper value={val} onChange={setter} step={step} min={mn}/>
+                  <div style={{textAlign:"center",fontSize:11,marginTop:2,color:DQ.gray}}>{val}{unit}</div>
+                </div>
+              ))}
+            </div>
+          </Win>
+
+          <button className="dq-btn" onClick={handleRecord}
+            style={{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:`3px solid ${DQ.gold}`,color:DQ.gold}}>
+            ▶▶ きろくする
+          </button>
+
+          <Win style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:12,color:DQ.gray,whiteSpace:"nowrap"}}>プロテイン</span>
+            <div style={{flex:1}}><Stepper value={protein} onChange={setProtein} step={1} min={1}/></div>
+            <span style={{fontSize:12,color:DQ.gray,whiteSpace:"nowrap"}}>{protein}ぱい</span>
+            <button className="dq-btn" onClick={handleProtein}
+              style={{whiteSpace:"nowrap",fontSize:12,color:DQ.blue}}>
+              +{protein*10}XP
+            </button>
+          </Win>
+
+          {recentLog.length>0&&(
+            <Win>
+              <div style={{fontSize:11,color:DQ.gray,marginBottom:6}}>▼ きょうのきろく</div>
+              {recentLog.map((l,i)=>(
+                <div key={i} style={{borderBottom:i<recentLog.length-1?"1px solid #111144":"none",paddingBottom:6,marginBottom:6}}>
+                  <div style={{display:"flex",justifyContent:"space-between"}}>
+                    <span style={{fontSize:13}}>{l.exercise}</span>
+                    <span style={{fontSize:13,color:DQ.gold}}>+{l.xp}XP</span>
+                  </div>
+                  <div style={{fontSize:11,color:DQ.gray,marginTop:1}}>
+                    <span style={{color:PART_COLOR[l.part]}}>{l.part}</span>
+                    {` ${l.weight}kg×${l.reps}回×${l.sets}set ${l.time}`}
+                  </div>
+                  <div style={{fontSize:10,color:"#666688",marginTop:1}}>{l.xl.join(" / ")}</div>
+                </div>
+              ))}
+            </Win>
+          )}
+        </div>
+      )}
+
+      {/* HISTORY */}
+      {tab==="history"&&(
+        <div>
+          <Win>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              {[["そうセッション",data.totalSessions||0,"かい"],["さいちょうれんぞく",data.maxStreak||0,"にち"],
+                ["しゅもくすう",Object.keys(data.exercises||{}).length,"しゅ"],["プロテイン",data.totalProtein||0,"ぱい"],
+                ["さいだいじゅうりょう",data.maxWeight||0,"kg"],["そうセット",data.totalSets||0,"set"]].map(([l,v,u])=>(
+                <div key={l} style={{borderBottom:"1px solid #111144",paddingBottom:6}}>
+                  <div style={{fontSize:10,color:DQ.gray}}>{l}</div>
+                  <div style={{fontSize:18,color:DQ.gold}}>{v}<span style={{fontSize:11,color:DQ.gray}}>{u}</span></div>
+                </div>
+              ))}
+            </div>
+          </Win>
+
+          <Win>
+            <div style={{fontSize:11,color:DQ.gray,marginBottom:8}}>▼ ぶいべつレベル</div>
+            {PARTS.map(p=>{
+              const pi=partLevelInfo((data.partXP||{})[p]||0);
+              return(
+                <div key={p} style={{marginBottom:8}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}}>
+                    <span style={{color:PART_COLOR[p]}}>{p} Lv.{pi.level}</span>
+                    <span style={{color:DQ.gray}}>{pi.current}/{pi.needed}</span>
+                  </div>
+                  <DQBar value={pi.current} max={pi.needed} color={PART_COLOR[p]}/>
+                </div>
+              );
+            })}
+          </Win>
+
+          {Object.keys(data.exercises||{}).length>0&&(
+            <Win>
+              <div style={{fontSize:11,color:DQ.gray,marginBottom:6}}>▼ しゅもくベスト</div>
+              {Object.entries(data.exercises||{}).map(([name,e])=>(
+                <div key={name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                  fontSize:12,borderBottom:"1px solid #111144",padding:"4px 0"}}>
+                  <div>
+                    <span style={{color:DQ.text}}>{name}</span>
+                    <span style={{fontSize:10,marginLeft:6,color:PART_COLOR[e.part]||DQ.gray}}>{e.part}</span>
+                  </div>
+                  <span style={{color:DQ.gray}}>{e.maxWeight}kg×{e.count}回</span>
+                </div>
+              ))}
+            </Win>
+          )}
+
+          {/* リセットボタン */}
+          <div style={{marginTop:16}}>
+            {!showReset?(
+              <button className="dq-btn" onClick={()=>setShowReset(true)}
+                style={{width:"100%",textAlign:"center",fontSize:12,padding:"10px",
+                  border:"2px solid #ff4444",color:"#ff4444"}}>
+                ▶ データをぜんぶけす
+              </button>
+            ):(
+              <Win style={{border:"3px solid #ff4444"}}>
+                <div style={{fontSize:13,color:"#ff4444",marginBottom:10,textAlign:"center"}}>
+                  ほんとうにぜんぶけしますか？
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button className="dq-btn" onClick={handleReset}
+                    style={{flex:1,textAlign:"center",color:"#ff4444",border:"2px solid #ff4444",fontSize:13,padding:"10px"}}>
+                    ▶ はい
+                  </button>
+                  <button className="dq-btn" onClick={()=>setShowReset(false)}
+                    style={{flex:1,textAlign:"center",color:DQ.gold,border:`2px solid ${DQ.gold}`,fontSize:13,padding:"10px"}}>
+                    ▶ いいえ
+                  </button>
+                </div>
+              </Win>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* BADGE */}
+      {tab==="badge"&&(
+        <div>
+          <Win>
+            <div style={{fontSize:12,color:DQ.gold}}>バッジ {earnedCount} / {BADGES.length}</div>
+            <div style={{fontSize:10,color:DQ.gray,marginTop:2}}>
+              {"▓".repeat(Math.floor(earnedCount/BADGES.length*20))}{"░".repeat(20-Math.floor(earnedCount/BADGES.length*20))}
+            </div>
+          </Win>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {BADGES.map(b=>{
+              const got=(data.badges||[]).includes(b.id);
+              return(
+                <div key={b.id} className="dq-win" style={{padding:"8px 10px",display:"flex",
+                  alignItems:"center",gap:8,opacity:got?1:0.4,
+                  borderColor:got?DQ.gold:"#333366"}}>
+                  <span style={{fontSize:16,flexShrink:0}}>{got?"★":"☆"}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,color:got?DQ.gold:DQ.gray}}>{b.name}</div>
+                    <div style={{fontSize:10,color:"#666688"}}>{b.desc}</div>
+                  </div>
+                  {got&&<span style={{fontSize:10,color:"#44ff44"}}>かいほう</span>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div style={{height:24}}/>
+    </div>
   );
 }
-
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
-</script>
-</body>
-</html>
