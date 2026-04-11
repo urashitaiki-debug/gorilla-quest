@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -402,15 +403,15 @@ function App(){
         h("div",{style:{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}},
           h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],style:{width:stage<=2?180:120,height:stage<=2?180:120,objectFit:"contain",objectPosition:"center",imageRendering:"pixelated"},onError:function(e){e.target.style.display="none";}})
         ),
-        h("div",{style:{flex:1}},
+        h("div",{style:{flex:1,minWidth:0}},
           h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}},
             h("div",{style:{fontSize:13,color:"#ffdd00"}},"ゴリラ  LV"+level),
             h("button",{onClick:handleProtein1,title:"プロテイン1杯",style:{background:"none",border:"none",cursor:"pointer",fontSize:22,lineHeight:1,padding:"0 2px"}},"🥤")
           ),
           h(DQBar,{value:current,max:needed,color:"#44ff44"}),
           h("div",{style:{fontSize:10,color:"#aaa",marginTop:1,marginBottom:6}},current+"/"+needed+" XP"),
-          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 8px"}},
-            PARTS.map(function(p){var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:3}},h("span",{style:{fontSize:9,color:PART_COLOR[p],width:20}},p),h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p],width:"50px"}),h("span",{style:{fontSize:9,color:"#aaa"}},"L"+pi.level));})
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 4px"}},
+            PARTS.map(function(p){var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:2,minWidth:0}},h("span",{style:{fontSize:9,color:PART_COLOR[p],width:18,flexShrink:0}},p),h("div",{style:{flex:1,height:10,background:"#001100",border:"1px solid #336633",minWidth:0,overflow:"hidden"}},h("div",{style:{height:"100%",width:Math.min(Math.round((pi.current/pi.needed)*100),100)+"%",background:PART_COLOR[p],transition:"width 0.4s"}})),h("span",{style:{fontSize:9,color:"#aaa",width:18,flexShrink:0,textAlign:"right"}},"L"+pi.level));})
           )
         )
       )
@@ -447,13 +448,9 @@ function App(){
       logMode==="single"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
         h("div",{className:"dq-win",style:{padding:"10px 12px"}},
           h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ぶいをえらぶ"),
-          h("div",{style:{display:"flex",gap:3}},PARTS.map(function(p){return h("button",{key:p,className:"dq-btn "+(part===p?"active":""),onClick:function(){setPart(p);},style:{flex:1,fontSize:11,padding:"5px 2px",textAlign:"center",color:part===p?PART_COLOR[p]:"#aaa",borderBottom:part===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);}))
-        ),
-        h("div",{className:"dq-win",style:{padding:"10px 12px"}},
+          h("div",{style:{display:"flex",gap:3,marginBottom:12}},PARTS.map(function(p){return h("button",{key:p,className:"dq-btn "+(part===p?"active":""),onClick:function(){setPart(p);},style:{flex:1,fontSize:11,padding:"5px 2px",textAlign:"center",color:part===p?PART_COLOR[p]:"#aaa",borderBottom:part===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);})),
           h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ しゅもくをえらぶ"),
-          h("select",{className:"dq-input",value:exercise,onChange:function(e){setExercise(e.target.value);},style:{width:"100%",fontSize:13}},PRESETS[part].map(function(e){return h("option",{key:e,value:e},e);}))
-        ),
-        h("div",{className:"dq-win",style:{padding:"10px 12px"}},
+          h("select",{className:"dq-input",value:exercise,onChange:function(e){setExercise(e.target.value);},style:{width:"100%",fontSize:13,marginBottom:12}},PRESETS[part].map(function(e){return h("option",{key:e,value:e},e);})),
           h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
             [["じゅうりょう","kg",weight,setWeight,5,0],["かいすう","かい",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(function(f){return h("div",{key:f[0]},h("div",{style:{fontSize:10,color:"#aaa",marginBottom:4,textAlign:"center"}},f[0]),h(Stepper,{value:f[2],onChange:f[3],step:f[4],min:f[5]}),h("div",{style:{textAlign:"center",fontSize:11,marginTop:2,color:"#aaa"}},f[2]+f[1]));})
           )
