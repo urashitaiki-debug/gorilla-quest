@@ -304,6 +304,15 @@ function App(){
     if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
   }
 
+  function handleProtein1(){
+    var xp=10;var np=Object.assign({},data.partXP);PARTS.forEach(function(p){np[p]=(np[p]||0)+2;});
+    var ntxp=data.totalXP+xp;var lv=levelInfo(ntxp).level;
+    var d=Object.assign({},data,{totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+1});
+    d.badges=(data.badges||[]).slice();var nb=[];
+    BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
+    save(d);setXpAnim(xp);
+    if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
+  }
   function handleProtein(){
     var xp=protein*10;var np=Object.assign({},data.partXP);PARTS.forEach(function(p){np[p]=(np[p]||0)+protein*2;});
     var ntxp=data.totalXP+xp;var lv=levelInfo(ntxp).level;
@@ -351,10 +360,13 @@ function App(){
     h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
       h("div",{style:{display:"flex",gap:12,alignItems:"flex-start"}},
         h("div",{style:{flexShrink:0,width:90,height:90,display:"flex",alignItems:"center",justifyContent:"center",background:"#000022",border:"2px solid #333366",overflow:"hidden"}},
-          h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],style:{maxWidth:86,maxHeight:86,objectFit:"contain",imageRendering:"pixelated"},onError:function(e){e.target.style.display="none";}})
+          h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],style:{width:270,height:270,objectFit:"cover",objectPosition:"center",imageRendering:"pixelated"},onError:function(e){e.target.style.display="none";}})
         ),
         h("div",{style:{flex:1}},
-          h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:4}},"ゴリラ  LV"+level),
+          h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}},
+            h("div",{style:{fontSize:13,color:"#ffdd00"}},"ゴリラ  LV"+level),
+            h("button",{onClick:handleProtein1,title:"プロテイン1杯",style:{background:"none",border:"none",cursor:"pointer",fontSize:22,lineHeight:1,padding:"0 2px"}},"🥤")
+          ),
           h(DQBar,{value:current,max:needed,color:"#44ff44"}),
           h("div",{style:{fontSize:10,color:"#aaa",marginTop:1,marginBottom:6}},current+"/"+needed+" XP"),
           h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 8px"}},
