@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
 <meta charset="UTF-8"/>
@@ -33,430 +32,426 @@ var useEffect = React.useEffect;
 var useCallback = React.useCallback;
 var useRef = React.useRef;
 
-var PARTS = [“胸”,“背中”,“脚”,“腕”,“肩”];
-var PART_COLOR = {“胸”:”#ff6666”,“背中”:”#6699ff”,“脚”:”#66ff66”,“腕”:”#ffaa44”,“肩”:”#cc66ff”};
+var PARTS = ["胸","背中","脚","腕","肩"];
+var PART_COLOR = {"胸":"#ff6666","背中":"#6699ff","脚":"#66ff66","腕":"#ffaa44","肩":"#cc66ff"};
 var PRESETS = {
-“胸”:[“ベンチプレス”,“ダンベルフライ”,“ケーブルクロスオーバー”,“ディップス”,“インクラインプレス”],
-“背中”:[“デッドリフト”,“ラットプルダウン”,“ベントオーバーロウ”,“チンアップ”],
-“脚”:[“スクワット”,“レッグプレス”,“ランジ”,“レッグカール”],
-“腕”:[“バーベルカール”,“ハンマーカール”,“トライセプスプレスダウン”,“スカルクラッシャー”],
-“肩”:[“ショルダープレス”,“サイドレイズ”,“フロントレイズ”,“フェイスプル”]
+  "胸":["ベンチプレス","ダンベルフライ","ケーブルクロスオーバー","ディップス","インクラインプレス"],
+  "背中":["デッドリフト","ラットプルダウン","ベントオーバーロウ","チンアップ"],
+  "脚":["スクワット","レッグプレス","ランジ","レッグカール"],
+  "腕":["バーベルカール","ハンマーカール","トライセプスプレスダウン","スカルクラッシャー"],
+  "肩":["ショルダープレス","サイドレイズ","フロントレイズ","フェイスプル"]
 };
-var BASE_URL = “https://urashitaiki-debug.github.io/gorilla-quest/”;
+var BASE_URL = "https://urashitaiki-debug.github.io/gorilla-quest/";
 var GORILLA_IMGS = [
-BASE_URL+“stage0.png”,BASE_URL+“stage1.png”,BASE_URL+“stage2.png”,
-BASE_URL+“stage3.png”,BASE_URL+“stage4.png”
+  BASE_URL+"stage0.png",BASE_URL+"stage1.png",BASE_URL+"stage2.png",
+  BASE_URL+"stage3.png",BASE_URL+"stage4.png"
 ];
-var STAGE_LABELS = [“あかちゃんゴリラ”,“こゴリラ”,“わかゴリラ”,“おとなゴリラ”,“さいきょうゴリラ”];
+var STAGE_LABELS = ["あかちゃんゴリラ","こゴリラ","わかゴリラ","おとなゴリラ","さいきょうゴリラ"];
 
 function levelInfo(xp){var lv=1,rem=xp,needed=100;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.3);}return{level:lv,current:rem,needed:needed};}
 function partLevelInfo(xp){var lv=1,rem=xp,needed=50;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.4);}return{level:lv,current:rem,needed:needed};}
 function getToday(){return new Date().toISOString().slice(0,10);}
 function getHour(){return new Date().getHours();}
 function getStreak(dates){
-if(!dates.length)return 0;
-var uniq=[…new Set(dates)].sort().reverse();
-var s=1;
-for(var i=0;i<uniq.length-1;i++){if((new Date(uniq[i])-new Date(uniq[i+1]))/86400000===1)s++;else break;}
-return s;
+  if(!dates.length)return 0;
+  var uniq=[...new Set(dates)].sort().reverse();
+  var s=1;
+  for(var i=0;i<uniq.length-1;i++){if((new Date(uniq[i])-new Date(uniq[i+1]))/86400000===1)s++;else break;}
+  return s;
 }
 function getStage(level){if(level<3)return 0;if(level<6)return 1;if(level<10)return 2;if(level<15)return 3;return 4;}
 
 var BADGES=[
-{id:“b001”,name:“スライムをたおした！”,desc:“はじめてのきろく”,cond:function(s){return(s.totalSessions||0)>=1;}},
-{id:“b002”,name:“ドラキーをたおした！”,desc:“3かいきろくした”,cond:function(s){return(s.totalSessions||0)>=3;}},
-{id:“b003”,name:“おおありをたおした！”,desc:“10かいきろくした”,cond:function(s){return(s.totalSessions||0)>=10;}},
-{id:“b004”,name:“いしにんぎょうをたおした！”,desc:“20かいきろくした”,cond:function(s){return(s.totalSessions||0)>=20;}},
-{id:“b005”,name:“ゴーレムをたおした！”,desc:“50かいきろくした”,cond:function(s){return(s.totalSessions||0)>=50;}},
-{id:“b006”,name:“キングスライムをたおした！”,desc:“100かいきろくした”,cond:function(s){return(s.totalSessions||0)>=100;}},
-{id:“b010”,name:“まものの巣にふみこんだ！”,desc:“3にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=3;}},
-{id:“b011”,name:“あんこくのとびらをこえた！”,desc:“7にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=7;}},
-{id:“b012”,name:“ちていのダンジョンをでた！”,desc:“14にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=14;}},
-{id:“b013”,name:“まおうのしろにちかづいた！”,desc:“30にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=30;}},
-{id:“b014”,name:“つきのかいだんをのぼった！”,desc:“60にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=60;}},
-{id:“b015”,name:“でんせつのゴリラ！”,desc:“100にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=100;}},
-{id:“b020”,name:“ゆうしゃのちからめざめた！”,desc:“レベル5とうたつ”,cond:function(s){return(s.level||1)>=5;}},
-{id:“b021”,name:“ちゅうきゅうぼうけんしゃ！”,desc:“レベル10とうたつ”,cond:function(s){return(s.level||1)>=10;}},
-{id:“b022”,name:“つわものといわれた！”,desc:“レベル15とうたつ”,cond:function(s){return(s.level||1)>=15;}},
-{id:“b023”,name:“えいゆうのしょうごうをえた！”,desc:“レベル20とうたつ”,cond:function(s){return(s.level||1)>=20;}},
-{id:“b024”,name:“でんせつのゆうしゃ！”,desc:“レベル30とうたつ”,cond:function(s){return(s.level||1)>=30;}},
-{id:“b025”,name:“ゴリラまおうをたおした！”,desc:“レベル50とうたつ”,cond:function(s){return(s.level||1)>=50;}},
-{id:“b030”,name:“あたらしいわざをおぼえた！”,desc:“しゅもく3しゅるい”,cond:function(s){return Object.keys(s.exercises||{}).length>=3;}},
-{id:“b031”,name:“わざのしょをみつけた！”,desc:“しゅもく5しゅるい”,cond:function(s){return Object.keys(s.exercises||{}).length>=5;}},
-{id:“b032”,name:“ひでんのわざをうけついだ！”,desc:“しゅもく10しゅるい”,cond:function(s){return Object.keys(s.exercises||{}).length>=10;}},
-{id:“b040”,name:“やくそうをのんだ！”,desc:“プロテイン1ぱい”,cond:function(s){return(s.totalProtein||0)>=1;}},
-{id:“b041”,name:“まほうのくすりをのんだ！”,desc:“プロテイン10ぱい”,cond:function(s){return(s.totalProtein||0)>=10;}},
-{id:“b042”,name:“せいすいをてにいれた！”,desc:“プロテイン30ぱい”,cond:function(s){return(s.totalProtein||0)>=30;}},
-{id:“b043”,name:“でんせつのエリクサー！”,desc:“プロテイン100ぱい”,cond:function(s){return(s.totalProtein||0)>=100;}},
-{id:“b050”,name:“けいけんちをためた！”,desc:“そうXP100”,cond:function(s){return(s.totalXP||0)>=100;}},
-{id:“b051”,name:“ちからがみなぎってきた！”,desc:“そうXP500”,cond:function(s){return(s.totalXP||0)>=500;}},
-{id:“b052”,name:“つよさがあふれだした！”,desc:“そうXP1000”,cond:function(s){return(s.totalXP||0)>=1000;}},
-{id:“b053”,name:“でんせつのつよさ！”,desc:“そうXP5000”,cond:function(s){return(s.totalXP||0)>=5000;}},
-{id:“b060”,name:“むねのよろいをてにいれた！”,desc:“むねLv3”,cond:function(s){return partLevelInfo((s.partXP||{})[“胸”]||0).level>=3;}},
-{id:“b061”,name:“むねのおうかんをかぶった！”,desc:“むねLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“胸”]||0).level>=5;}},
-{id:“b063”,name:“せなかのよろいをてにいれた！”,desc:“せなかLv3”,cond:function(s){return partLevelInfo((s.partXP||{})[“背中”]||0).level>=3;}},
-{id:“b064”,name:“せなかのおうかんをかぶった！”,desc:“せなかLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“背中”]||0).level>=5;}},
-{id:“b066”,name:“あしのよろいをてにいれた！”,desc:“あしLv3”,cond:function(s){return partLevelInfo((s.partXP||{})[“脚”]||0).level>=3;}},
-{id:“b067”,name:“あしのおうかんをかぶった！”,desc:“あしLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“脚”]||0).level>=5;}},
-{id:“b069”,name:“うでのよろいをてにいれた！”,desc:“うでLv3”,cond:function(s){return partLevelInfo((s.partXP||{})[“腕”]||0).level>=3;}},
-{id:“b070”,name:“うでのおうかんをかぶった！”,desc:“うでLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“腕”]||0).level>=5;}},
-{id:“b072”,name:“かたのよろいをてにいれた！”,desc:“かたLv3”,cond:function(s){return partLevelInfo((s.partXP||{})[“肩”]||0).level>=3;}},
-{id:“b073”,name:“かたのおうかんをかぶった！”,desc:“かたLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“肩”]||0).level>=5;}},
-{id:“b080”,name:“つきのあかりのもとで…”,desc:“よるのきろく（0〜5じ）”,cond:function(s){return s.nightRecord||false;}},
-{id:“b081”,name:“あさのめざめ！”,desc:“あさのきろく（5〜7じ）”,cond:function(s){return s.morningRecord||false;}},
-{id:“b084”,name:“じこベストをこえた！”,desc:“はじめてのじこベスト”,cond:function(s){return(s.prCount||0)>=1;}},
-{id:“b085”,name:“じこベストのつわもの！”,desc:“じこベスト10かい”,cond:function(s){return(s.prCount||0)>=10;}},
-{id:“b090”,name:“おもいいわをもちあげた！”,desc:“じゅうりょう50kg”,cond:function(s){return(s.maxWeight||0)>=50;}},
-{id:“b091”,name:“ひゃっきゃくのかべをこえた！”,desc:“じゅうりょう100kg”,cond:function(s){return(s.maxWeight||0)>=100;}},
-{id:“b094”,name:“はじめてのセット！”,desc:“そうセット10”,cond:function(s){return(s.totalSets||0)>=10;}},
-{id:“b095”,name:“セットのつわもの！”,desc:“そうセット100”,cond:function(s){return(s.totalSets||0)>=100;}},
-{id:“b100”,name:“ぼうけんのはじまり”,desc:“そうXP200こえ”,cond:function(s){return(s.totalXP||0)>=200;}},
-{id:“b101”,name:“ちいさなゆうき”,desc:“2にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=2;}},
-{id:“b102”,name:“まものたいじのたつじん”,desc:“セッション30かい”,cond:function(s){return(s.totalSessions||0)>=30;}},
-{id:“b103”,name:“くらやみをてらすひかり”,desc:“レベル8とうたつ”,cond:function(s){return(s.level||1)>=8;}},
-{id:“b108”,name:“かぜをよぶゴリラ”,desc:“7にちれんぞく+レベル5”,cond:function(s){return(s.maxStreak||0)>=7&&(s.level||1)>=5;}},
-{id:“b111”,name:“もくもくとはたらくもの”,desc:“いちにちに3かいきろく”,cond:function(s){return(s.maxDailySessions||0)>=3;}},
+  {id:"b001",name:"スライムをたおした！",desc:"はじめてのきろく",cond:function(s){return(s.totalSessions||0)>=1;}},
+  {id:"b002",name:"ドラキーをたおした！",desc:"3かいきろくした",cond:function(s){return(s.totalSessions||0)>=3;}},
+  {id:"b003",name:"おおありをたおした！",desc:"10かいきろくした",cond:function(s){return(s.totalSessions||0)>=10;}},
+  {id:"b004",name:"いしにんぎょうをたおした！",desc:"20かいきろくした",cond:function(s){return(s.totalSessions||0)>=20;}},
+  {id:"b005",name:"ゴーレムをたおした！",desc:"50かいきろくした",cond:function(s){return(s.totalSessions||0)>=50;}},
+  {id:"b006",name:"キングスライムをたおした！",desc:"100かいきろくした",cond:function(s){return(s.totalSessions||0)>=100;}},
+  {id:"b010",name:"まものの巣にふみこんだ！",desc:"3にちれんぞく",cond:function(s){return(s.maxStreak||0)>=3;}},
+  {id:"b011",name:"あんこくのとびらをこえた！",desc:"7にちれんぞく",cond:function(s){return(s.maxStreak||0)>=7;}},
+  {id:"b012",name:"ちていのダンジョンをでた！",desc:"14にちれんぞく",cond:function(s){return(s.maxStreak||0)>=14;}},
+  {id:"b013",name:"まおうのしろにちかづいた！",desc:"30にちれんぞく",cond:function(s){return(s.maxStreak||0)>=30;}},
+  {id:"b014",name:"つきのかいだんをのぼった！",desc:"60にちれんぞく",cond:function(s){return(s.maxStreak||0)>=60;}},
+  {id:"b015",name:"でんせつのゴリラ！",desc:"100にちれんぞく",cond:function(s){return(s.maxStreak||0)>=100;}},
+  {id:"b020",name:"ゆうしゃのちからめざめた！",desc:"レベル5とうたつ",cond:function(s){return(s.level||1)>=5;}},
+  {id:"b021",name:"ちゅうきゅうぼうけんしゃ！",desc:"レベル10とうたつ",cond:function(s){return(s.level||1)>=10;}},
+  {id:"b022",name:"つわものといわれた！",desc:"レベル15とうたつ",cond:function(s){return(s.level||1)>=15;}},
+  {id:"b023",name:"えいゆうのしょうごうをえた！",desc:"レベル20とうたつ",cond:function(s){return(s.level||1)>=20;}},
+  {id:"b024",name:"でんせつのゆうしゃ！",desc:"レベル30とうたつ",cond:function(s){return(s.level||1)>=30;}},
+  {id:"b025",name:"ゴリラまおうをたおした！",desc:"レベル50とうたつ",cond:function(s){return(s.level||1)>=50;}},
+  {id:"b030",name:"あたらしいわざをおぼえた！",desc:"しゅもく3しゅるい",cond:function(s){return Object.keys(s.exercises||{}).length>=3;}},
+  {id:"b031",name:"わざのしょをみつけた！",desc:"しゅもく5しゅるい",cond:function(s){return Object.keys(s.exercises||{}).length>=5;}},
+  {id:"b032",name:"ひでんのわざをうけついだ！",desc:"しゅもく10しゅるい",cond:function(s){return Object.keys(s.exercises||{}).length>=10;}},
+  {id:"b040",name:"やくそうをのんだ！",desc:"プロテイン1ぱい",cond:function(s){return(s.totalProtein||0)>=1;}},
+  {id:"b041",name:"まほうのくすりをのんだ！",desc:"プロテイン10ぱい",cond:function(s){return(s.totalProtein||0)>=10;}},
+  {id:"b042",name:"せいすいをてにいれた！",desc:"プロテイン30ぱい",cond:function(s){return(s.totalProtein||0)>=30;}},
+  {id:"b043",name:"でんせつのエリクサー！",desc:"プロテイン100ぱい",cond:function(s){return(s.totalProtein||0)>=100;}},
+  {id:"b050",name:"けいけんちをためた！",desc:"そうXP100",cond:function(s){return(s.totalXP||0)>=100;}},
+  {id:"b051",name:"ちからがみなぎってきた！",desc:"そうXP500",cond:function(s){return(s.totalXP||0)>=500;}},
+  {id:"b052",name:"つよさがあふれだした！",desc:"そうXP1000",cond:function(s){return(s.totalXP||0)>=1000;}},
+  {id:"b053",name:"でんせつのつよさ！",desc:"そうXP5000",cond:function(s){return(s.totalXP||0)>=5000;}},
+  {id:"b060",name:"むねのよろいをてにいれた！",desc:"むねLv3",cond:function(s){return partLevelInfo((s.partXP||{})["胸"]||0).level>=3;}},
+  {id:"b061",name:"むねのおうかんをかぶった！",desc:"むねLv5",cond:function(s){return partLevelInfo((s.partXP||{})["胸"]||0).level>=5;}},
+  {id:"b063",name:"せなかのよろいをてにいれた！",desc:"せなかLv3",cond:function(s){return partLevelInfo((s.partXP||{})["背中"]||0).level>=3;}},
+  {id:"b064",name:"せなかのおうかんをかぶった！",desc:"せなかLv5",cond:function(s){return partLevelInfo((s.partXP||{})["背中"]||0).level>=5;}},
+  {id:"b066",name:"あしのよろいをてにいれた！",desc:"あしLv3",cond:function(s){return partLevelInfo((s.partXP||{})["脚"]||0).level>=3;}},
+  {id:"b067",name:"あしのおうかんをかぶった！",desc:"あしLv5",cond:function(s){return partLevelInfo((s.partXP||{})["脚"]||0).level>=5;}},
+  {id:"b069",name:"うでのよろいをてにいれた！",desc:"うでLv3",cond:function(s){return partLevelInfo((s.partXP||{})["腕"]||0).level>=3;}},
+  {id:"b070",name:"うでのおうかんをかぶった！",desc:"うでLv5",cond:function(s){return partLevelInfo((s.partXP||{})["腕"]||0).level>=5;}},
+  {id:"b072",name:"かたのよろいをてにいれた！",desc:"かたLv3",cond:function(s){return partLevelInfo((s.partXP||{})["肩"]||0).level>=3;}},
+  {id:"b073",name:"かたのおうかんをかぶった！",desc:"かたLv5",cond:function(s){return partLevelInfo((s.partXP||{})["肩"]||0).level>=5;}},
+  {id:"b080",name:"つきのあかりのもとで…",desc:"よるのきろく（0〜5じ）",cond:function(s){return s.nightRecord||false;}},
+  {id:"b081",name:"あさのめざめ！",desc:"あさのきろく（5〜7じ）",cond:function(s){return s.morningRecord||false;}},
+  {id:"b084",name:"じこベストをこえた！",desc:"はじめてのじこベスト",cond:function(s){return(s.prCount||0)>=1;}},
+  {id:"b085",name:"じこベストのつわもの！",desc:"じこベスト10かい",cond:function(s){return(s.prCount||0)>=10;}},
+  {id:"b090",name:"おもいいわをもちあげた！",desc:"じゅうりょう50kg",cond:function(s){return(s.maxWeight||0)>=50;}},
+  {id:"b091",name:"ひゃっきゃくのかべをこえた！",desc:"じゅうりょう100kg",cond:function(s){return(s.maxWeight||0)>=100;}},
+  {id:"b094",name:"はじめてのセット！",desc:"そうセット10",cond:function(s){return(s.totalSets||0)>=10;}},
+  {id:"b095",name:"セットのつわもの！",desc:"そうセット100",cond:function(s){return(s.totalSets||0)>=100;}},
+  {id:"b100",name:"ぼうけんのはじまり",desc:"そうXP200こえ",cond:function(s){return(s.totalXP||0)>=200;}},
+  {id:"b101",name:"ちいさなゆうき",desc:"2にちれんぞく",cond:function(s){return(s.maxStreak||0)>=2;}},
+  {id:"b102",name:"まものたいじのたつじん",desc:"セッション30かい",cond:function(s){return(s.totalSessions||0)>=30;}},
+  {id:"b103",name:"くらやみをてらすひかり",desc:"レベル8とうたつ",cond:function(s){return(s.level||1)>=8;}},
+  {id:"b108",name:"かぜをよぶゴリラ",desc:"7にちれんぞく+レベル5",cond:function(s){return(s.maxStreak||0)>=7&&(s.level||1)>=5;}},
+  {id:"b111",name:"もくもくとはたらくもの",desc:"いちにちに3かいきろく",cond:function(s){return(s.maxDailySessions||0)>=3;}},
 ];
 
 function DQBar(props){
-var pct=Math.min(Math.round((props.value/props.max)*100),100);
-return h(“div”,{style:{width:props.width||“100%”,height:10,background:”#001100”,border:“1px solid #336633”,display:“inline-block”,verticalAlign:“middle”}},
-h(“div”,{style:{height:“100%”,width:pct+”%”,background:props.color,transition:“width 0.4s”}})
-);
+  var pct=Math.min(Math.round((props.value/props.max)*100),100);
+  return h("div",{style:{width:props.width||"100%",height:10,background:"#001100",border:"1px solid #336633",display:"inline-block",verticalAlign:"middle"}},
+    h("div",{style:{height:"100%",width:pct+"%",background:props.color,transition:"width 0.4s"}})
+  );
 }
 
 function Stepper(props){
-var value=props.value,onChange=props.onChange,step=props.step||5,min=props.min||0;
-return h(“div”,{style:{display:“flex”,alignItems:“center”}},
-h(“button”,{className:“dq-btn”,onClick:function(){onChange(Math.max(min,value-step));},style:{width:36,textAlign:“center”,padding:“6px”,fontSize:16}},“◀”),
-h(“span”,{style:{flex:1,textAlign:“center”,fontSize:14,color:”#ffdd00”,background:”#000011”,padding:“6px 0”,border:“2px solid #4444aa”,borderLeft:“none”,borderRight:“none”}},value),
-h(“button”,{className:“dq-btn”,onClick:function(){onChange(value+step);},style:{width:36,textAlign:“center”,padding:“6px”,fontSize:16}},“▶”)
-);
+  var value=props.value,onChange=props.onChange,step=props.step||5,min=props.min||0;
+  return h("div",{style:{display:"flex",alignItems:"center"}},
+    h("button",{className:"dq-btn",onClick:function(){onChange(Math.max(min,value-step));},style:{width:36,textAlign:"center",padding:"6px",fontSize:16}},"◀"),
+    h("span",{style:{flex:1,textAlign:"center",fontSize:14,color:"#ffdd00",background:"#000011",padding:"6px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},value),
+    h("button",{className:"dq-btn",onClick:function(){onChange(value+step);},style:{width:36,textAlign:"center",padding:"6px",fontSize:16}},"▶")
+  );
 }
 
 function Win(props){
-return h(“div”,{className:“dq-win”,style:Object.assign({padding:“10px 12px”,marginBottom:8},props.style)},props.children);
+  return h("div",{className:"dq-win",style:Object.assign({padding:"10px 12px",marginBottom:8},props.style)},props.children);
 }
 
 function LevelUpOverlay(props){
-useEffect(function(){var t=setTimeout(props.onDone,2800);return function(){clearTimeout(t);};},[]);
-return h(“div”,{style:{position:“fixed”,inset:0,zIndex:1000,display:“flex”,alignItems:“center”,justifyContent:“center”,pointerEvents:“none”}},
-h(“div”,{style:{animation:“flash 0.3s ease 2”,background:“rgba(255,255,100,0.12)”,position:“absolute”,inset:0}}),
-h(“div”,{className:“dq-win”,style:{padding:“20px 32px”,textAlign:“center”,animation:“levelup 2.8s ease forwards”,border:“4px solid #ffdd00”}},
-h(“div”,{style:{fontSize:13,color:”#ffdd00”,marginBottom:8}},“✦ ✦ ✦”),
-h(“div”,{style:{fontSize:18,color:”#ffdd00”,lineHeight:1.8}},
-“レベルが あがった！”,h(“br”),
-h(“span”,{style:{fontSize:24,color:”#fff”}},“Lv.”+props.level)
-),
-h(“div”,{style:{fontSize:13,color:”#ffdd00”,marginTop:8}},“✦ ✦ ✦”)
-)
-);
+  useEffect(function(){var t=setTimeout(props.onDone,2800);return function(){clearTimeout(t);};},[]);
+  return h("div",{style:{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}},
+    h("div",{style:{animation:"flash 0.3s ease 2",background:"rgba(255,255,100,0.12)",position:"absolute",inset:0}}),
+    h("div",{className:"dq-win",style:{padding:"20px 32px",textAlign:"center",animation:"levelup 2.8s ease forwards",border:"4px solid #ffdd00"}},
+      h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:8}},"✦ ✦ ✦"),
+      h("div",{style:{fontSize:18,color:"#ffdd00",lineHeight:1.8}},
+        "レベルが あがった！",h("br"),
+        h("span",{style:{fontSize:24,color:"#fff"}},"Lv."+props.level)
+      ),
+      h("div",{style:{fontSize:13,color:"#ffdd00",marginTop:8}},"✦ ✦ ✦")
+    )
+  );
 }
 
 function XPPop(props){
-useEffect(function(){var t=setTimeout(props.onDone,1400);return function(){clearTimeout(t);};},[]);
-return h(“div”,{style:{position:“fixed”,top:“30%”,left:“50%”,transform:“translateX(-50%)”,zIndex:900,pointerEvents:“none”,animation:“xpPop 1.4s ease forwards”,fontSize:20,color:”#ffdd00”,textShadow:“0 0 8px #ffdd00”}},“＋”+props.xp+“XP”);
+  useEffect(function(){var t=setTimeout(props.onDone,1400);return function(){clearTimeout(t);};},[]);
+  return h("div",{style:{position:"fixed",top:"30%",left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",animation:"xpPop 1.4s ease forwards",fontSize:20,color:"#ffdd00",textShadow:"0 0 8px #ffdd00"}},"＋"+props.xp+"XP");
 }
 
 function BadgePop(props){
-useEffect(function(){var t=setTimeout(props.onDone,3000);return function(){clearTimeout(t);};},[]);
-return h(“div”,{style:{position:“fixed”,bottom:80,left:“50%”,transform:“translateX(-50%)”,zIndex:900,pointerEvents:“none”,width:“85%”,maxWidth:380,animation:“badgePop 3s ease forwards”}},
-h(“div”,{className:“dq-win”,style:{padding:“12px 16px”,border:“3px solid #ffdd00”,textAlign:“center”}},
-h(“div”,{style:{fontSize:11,color:”#ffdd00”,marginBottom:4}},“★ バッジをてにいれた！”),
-h(“div”,{style:{fontSize:14,color:”#fff”}},props.badge.name),
-h(“div”,{style:{fontSize:11,color:”#aaa”,marginTop:2}},props.badge.desc)
-)
-);
+  useEffect(function(){var t=setTimeout(props.onDone,3000);return function(){clearTimeout(t);};},[]);
+  return h("div",{style:{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",width:"85%",maxWidth:380,animation:"badgePop 3s ease forwards"}},
+    h("div",{className:"dq-win",style:{padding:"12px 16px",border:"3px solid #ffdd00",textAlign:"center"}},
+      h("div",{style:{fontSize:11,color:"#ffdd00",marginBottom:4}},"★ バッジをてにいれた！"),
+      h("div",{style:{fontSize:14,color:"#fff"}},props.badge.name),
+      h("div",{style:{fontSize:11,color:"#aaa",marginTop:2}},props.badge.desc)
+    )
+  );
 }
 
 var INIT={totalXP:0,partXP:{},exercises:{},sessions:[],badges:[],totalSessions:0,maxStreak:0,level:1,totalProtein:0,nightRecord:false,morningRecord:false,noonRecord:false,prCount:0,totalSets:0,maxWeight:0,maxDailySessions:0};
-var SK=“gorilla_quest_v3”;
+var SK="gorilla_quest_v3";
 
 function App(){
-var s0=function(){try{return JSON.parse(localStorage.getItem(SK)||“null”)||INIT;}catch(e){return INIT;}};
-var *=useState(s0);var data=*[0];var setData=_[1];
-var _t=useState(“log”);var tab=_t[0];var setTab=_t[1];
-var _p=useState(“胸”);var part=_p[0];var setPart=_p[1];
-var _e=useState(PRESETS[“胸”][0]);var exercise=_e[0];var setExercise=_e[1];
-var _w=useState(60);var weight=_w[0];var setWeight=_w[1];
-var _r=useState(10);var reps=_r[0];var setReps=_r[1];
-var _ss=useState(3);var sets=_ss[0];var setSets=_ss[1];
-var _pr=useState(1);var protein=_pr[0];var setProtein=_pr[1];
-var _rl=useState([]);var recentLog=_rl[0];var setRecentLog=_rl[1];
-var _la=useState(null);var lvAnim=_la[0];var setLvAnim=_la[1];
-var _xa=useState(null);var xpAnim=_xa[0];var setXpAnim=_xa[1];
-var _ba=useState(null);var badgeAnim=_ba[0];var setBadgeAnim=_ba[1];
-var _sr=useState(false);var showReset=_sr[0];var setShowReset=_sr[1];
-var badgeQueue=useRef([]);
+  var s0=function(){try{return JSON.parse(localStorage.getItem(SK)||"null")||INIT;}catch(e){return INIT;}};
+  var _=useState(s0);var data=_[0];var setData=_[1];
+  var _t=useState("log");var tab=_t[0];var setTab=_t[1];
+  var _p=useState("胸");var part=_p[0];var setPart=_p[1];
+  var _e=useState(PRESETS["胸"][0]);var exercise=_e[0];var setExercise=_e[1];
+  var _w=useState(60);var weight=_w[0];var setWeight=_w[1];
+  var _r=useState(10);var reps=_r[0];var setReps=_r[1];
+  var _ss=useState(3);var sets=_ss[0];var setSets=_ss[1];
+  var _pr=useState(1);var protein=_pr[0];var setProtein=_pr[1];
+  var _rl=useState([]);var recentLog=_rl[0];var setRecentLog=_rl[1];
+  var _la=useState(null);var lvAnim=_la[0];var setLvAnim=_la[1];
+  var _xa=useState(null);var xpAnim=_xa[0];var setXpAnim=_xa[1];
+  var _ba=useState(null);var badgeAnim=_ba[0];var setBadgeAnim=_ba[1];
+  var _sr=useState(false);var showReset=_sr[0];var setShowReset=_sr[1];
+  var badgeQueue=useRef([]);
 
-useEffect(function(){
-var firstEx=PRESETS[part][0];
-setExercise(firstEx);
-setWeight((data.exercises[firstEx]&&data.exercises[firstEx].maxWeight)||60);
-},[part]);
+  useEffect(function(){
+    var firstEx=PRESETS[part][0];
+    setExercise(firstEx);
+    setWeight((data.exercises[firstEx]&&data.exercises[firstEx].maxWeight)||60);
+  },[part]);
 
-useEffect(function(){
-setWeight((data.exercises[exercise]&&data.exercises[exercise].maxWeight)||60);
-},[exercise]);
+  useEffect(function(){
+    setWeight((data.exercises[exercise]&&data.exercises[exercise].maxWeight)||60);
+  },[exercise]);
 
-var save=useCallback(function(d){
-setData(d);
-try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){}
-},[]);
+  var save=useCallback(function(d){
+    setData(d);
+    try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){}
+  },[]);
 
-var popNextBadge=useCallback(function(){
-if(badgeQueue.current.length>0) setBadgeAnim(badgeQueue.current.shift());
-},[]);
+  var popNextBadge=useCallback(function(){
+    if(badgeQueue.current.length>0) setBadgeAnim(badgeQueue.current.shift());
+  },[]);
 
-function handleRecord(){
-var today=getToday();var hour=getHour();
-var isNew=!data.exercises[exercise];
-var prevMax=(data.exercises[exercise]&&data.exercises[exercise].maxWeight)||0;
-var isPR=weight>prevMax&&!isNew;
-var xp=sets*5;var xl=[sets+“x5 +”+sets*5+“XP”];
-if(isNew){xp+=20;xl.push(“しんしゅもく +20XP”);}
-if(isPR){xp+=30;xl.push(“じこベスト +30XP”);}
-var ns=data.sessions.concat([today]);
-var streak=getStreak(ns);
-if(streak>=3&&streak>getStreak(data.sessions)){xp+=50;xl.push(“れんぞく +50XP”);}
-var ntxp=data.totalXP+xp;
-var prevLv=levelInfo(data.totalXP).level;
-var lv=levelInfo(ntxp).level;
-var np=Object.assign({},data.partXP);np[part]=(np[part]||0)+(sets*5);
-var ne=Object.assign({},data.exercises);
-ne[exercise]={maxWeight:Math.max(weight,prevMax),count:((ne[exercise]&&ne[exercise].count)||0)+1,part:part};
-var tds=ns.filter(function(d){return d===today;}).length;
-var d=Object.assign({},data,{totalXP:ntxp,partXP:np,exercises:ne,sessions:ns,
-totalSessions:(data.totalSessions||0)+1,maxStreak:Math.max(data.maxStreak||0,streak),level:lv,
-prCount:(data.prCount||0)+(isPR?1:0),totalSets:(data.totalSets||0)+sets,
-maxWeight:Math.max(data.maxWeight||0,weight),maxDailySessions:Math.max(data.maxDailySessions||0,tds),
-nightRecord:data.nightRecord||(hour>=0&&hour<5),
-morningRecord:data.morningRecord||(hour>=5&&hour<7),
-noonRecord:data.noonRecord||(hour>=12&&hour<13)});
-d.badges=(data.badges||[]).slice();
-var nb=[];
-BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
-save(d);
-setRecentLog(function(prev){return [{exercise:exercise,part:part,weight:weight,reps:reps,sets:sets,xp:xp,xl:xl,time:new Date().toLocaleTimeString(“ja-JP”,{hour:“2-digit”,minute:“2-digit”})}].concat(prev.slice(0,9));});
-setXpAnim(xp);
-if(lv>prevLv) setTimeout(function(){setLvAnim(lv);},800);
-if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
-}
+  function handleRecord(){
+    var today=getToday();var hour=getHour();
+    var isNew=!data.exercises[exercise];
+    var prevMax=(data.exercises[exercise]&&data.exercises[exercise].maxWeight)||0;
+    var isPR=weight>prevMax&&!isNew;
+    var xp=sets*5;var xl=[sets+"x5 +"+sets*5+"XP"];
+    if(isNew){xp+=20;xl.push("しんしゅもく +20XP");}
+    if(isPR){xp+=30;xl.push("じこベスト +30XP");}
+    var ns=data.sessions.concat([today]);
+    var streak=getStreak(ns);
+    if(streak>=3&&streak>getStreak(data.sessions)){xp+=50;xl.push("れんぞく +50XP");}
+    var ntxp=data.totalXP+xp;
+    var prevLv=levelInfo(data.totalXP).level;
+    var lv=levelInfo(ntxp).level;
+    var np=Object.assign({},data.partXP);np[part]=(np[part]||0)+(sets*5);
+    var ne=Object.assign({},data.exercises);
+    ne[exercise]={maxWeight:Math.max(weight,prevMax),count:((ne[exercise]&&ne[exercise].count)||0)+1,part:part};
+    var tds=ns.filter(function(d){return d===today;}).length;
+    var d=Object.assign({},data,{totalXP:ntxp,partXP:np,exercises:ne,sessions:ns,
+      totalSessions:(data.totalSessions||0)+1,maxStreak:Math.max(data.maxStreak||0,streak),level:lv,
+      prCount:(data.prCount||0)+(isPR?1:0),totalSets:(data.totalSets||0)+sets,
+      maxWeight:Math.max(data.maxWeight||0,weight),maxDailySessions:Math.max(data.maxDailySessions||0,tds),
+      nightRecord:data.nightRecord||(hour>=0&&hour<5),
+      morningRecord:data.morningRecord||(hour>=5&&hour<7),
+      noonRecord:data.noonRecord||(hour>=12&&hour<13)});
+    d.badges=(data.badges||[]).slice();
+    var nb=[];
+    BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
+    save(d);
+    setRecentLog(function(prev){return [{exercise:exercise,part:part,weight:weight,reps:reps,sets:sets,xp:xp,xl:xl,time:new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"})}].concat(prev.slice(0,9));});
+    setXpAnim(xp);
+    if(lv>prevLv) setTimeout(function(){setLvAnim(lv);},800);
+    if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
+  }
 
-function handleProtein(){
-var xp=protein*10;var ntxp=data.totalXP+xp;
-var lv=levelInfo(ntxp).level;
-var np=Object.assign({},data.partXP);
-PARTS.forEach(function(p){np[p]=(np[p]||0)+protein*2;});
-var d=Object.assign({},data,{totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+protein});
-d.badges=(data.badges||[]).slice();
-var nb=[];
-BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
-save(d);setXpAnim(xp);
-if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
-}
+  function handleProtein(){
+    var xp=protein*10;var ntxp=data.totalXP+xp;
+    var lv=levelInfo(ntxp).level;
+    var np=Object.assign({},data.partXP);
+    PARTS.forEach(function(p){np[p]=(np[p]||0)+protein*2;});
+    var d=Object.assign({},data,{totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+protein});
+    d.badges=(data.badges||[]).slice();
+    var nb=[];
+    BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
+    save(d);setXpAnim(xp);
+    if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
+  }
 
-function handleReset(){save(INIT);setRecentLog([]);setShowReset(false);}
+  function handleReset(){save(INIT);setRecentLog([]);setShowReset(false);}
 
-var li=levelInfo(data.totalXP||0);
-var level=li.level,current=li.current,needed=li.needed;
-var pct=Math.round((current/needed)*100);
-var stage=getStage(level);
-var earnedCount=(data.badges||[]).length;
+  var li=levelInfo(data.totalXP||0);
+  var level=li.level,current=li.current,needed=li.needed;
+  var pct=Math.round((current/needed)*100);
+  var stage=getStage(level);
+  var earnedCount=(data.badges||[]).length;
 
-function ts(t){
-return {flex:1,padding:“9px 0”,border:“none”,cursor:“pointer”,fontSize:12,fontWeight:500,fontFamily:”‘DotGothic16’,monospace”,
-background:tab===t?“rgba(92,184,122,0.18)”:“rgba(255,255,255,0.05)”,
-color:tab===t?”#5cb87a”:”#aaa”,
-boxShadow:tab===t?“inset 0 2px 4px rgba(0,0,0,0.3)”:“inset 0 1px 3px rgba(0,0,0,0.2)”,transition:“all 0.15s”};
-}
-var card={background:”#000033”,border:“3px solid #fff”,padding:“10px 12px”,marginBottom:8};
+  function ts(t){
+    return {flex:1,padding:"9px 0",border:"none",cursor:"pointer",fontSize:12,fontWeight:500,fontFamily:"'DotGothic16',monospace",
+      background:tab===t?"rgba(92,184,122,0.18)":"rgba(255,255,255,0.05)",
+      color:tab===t?"#5cb87a":"#aaa",
+      boxShadow:tab===t?"inset 0 2px 4px rgba(0,0,0,0.3)":"inset 0 1px 3px rgba(0,0,0,0.2)",transition:"all 0.15s"};
+  }
+  var card={background:"#000033",border:"3px solid #fff",padding:"10px 12px",marginBottom:8};
 
-return h(“div”,{style:{maxWidth:430,margin:“0 auto”,padding:“10px 12px”,background:”#0a0a1a”,minHeight:“100vh”}},
-xpAnim?h(XPPop,{xp:xpAnim,onDone:function(){setXpAnim(null);}}):null,
-lvAnim?h(LevelUpOverlay,{level:lvAnim,onDone:function(){setLvAnim(null);}}):null,
-badgeAnim?h(BadgePop,{badge:badgeAnim,onDone:function(){setBadgeAnim(null);setTimeout(popNextBadge,400);}}):null,
+  return h("div",{style:{maxWidth:430,margin:"0 auto",padding:"10px 12px",background:"#0a0a1a",minHeight:"100vh"}},
+    xpAnim?h(XPPop,{xp:xpAnim,onDone:function(){setXpAnim(null);}}):null,
+    lvAnim?h(LevelUpOverlay,{level:lvAnim,onDone:function(){setLvAnim(null);}}):null,
+    badgeAnim?h(BadgePop,{badge:badgeAnim,onDone:function(){setBadgeAnim(null);setTimeout(popNextBadge,400);}}):null,
 
-```
-h("div",{style:{textAlign:"center",marginBottom:8}},
-  h("div",{style:{fontSize:20,color:"#ffdd00",letterSpacing:2}},"★ GORILLA QUEST ★"),
-  h("div",{style:{fontSize:11,color:"#aaa"}},STAGE_LABELS[stage])
-),
-
-h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-  h("div",{style:{display:"flex",gap:12,alignItems:"flex-start"}},
-    h("div",{style:{flexShrink:0,width:100,height:100,display:"flex",alignItems:"center",justifyContent:"center",background:"#000022",border:"2px solid #333366",position:"relative"}},
-      h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],
-        style:{maxWidth:96,maxHeight:96,objectFit:"contain",imageRendering:"pixelated"},
-        onError:function(e){e.target.style.opacity="0";e.target.nextSibling.style.display="flex";}}),
-      h("div",{style:{display:"none",position:"absolute",inset:0,alignItems:"center",justifyContent:"center",fontSize:10,color:"#666688",textAlign:"center"}},"画像を\nアップして")
+    h("div",{style:{textAlign:"center",marginBottom:8}},
+      h("div",{style:{fontSize:20,color:"#ffdd00",letterSpacing:2}},"★ GORILLA QUEST ★"),
+      h("div",{style:{fontSize:11,color:"#aaa"}},STAGE_LABELS[stage])
     ),
-    h("div",{style:{flex:1}},
-      h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:6}},"ゴリラ"),
-      h("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:4}},
-        h("span",{style:{fontSize:11,color:"#aaa",width:24}},"LV"),
-        h("span",{style:{fontSize:16,color:"#fff"}},level)
-      ),
-      h("div",{style:{fontSize:11,color:"#aaa",marginBottom:2}},"けいけんち"),
-      h(DQBar,{value:current,max:needed,color:"#44ff44"}),
-      h("div",{style:{fontSize:10,color:"#aaa",marginTop:1}},current+"/"+needed),
-      h("div",{style:{fontSize:11,color:"#aaa",marginTop:6,marginBottom:2}},"そうXP"),
-      h("div",{style:{fontSize:13,color:"#ffdd00"}},data.totalXP||0)
-    )
-  ),
-  h("div",{style:{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 10px"}},
-    PARTS.map(function(p){
-      var pi=partLevelInfo((data.partXP||{})[p]||0);
-      return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:4}},
-        h("span",{style:{fontSize:10,color:PART_COLOR[p],width:22}},p),
-        h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p],width:"60px"}),
-        h("span",{style:{fontSize:10,color:"#aaa"}},"L"+pi.level)
-      );
-    })
-  )
-),
 
-h("div",{style:{display:"flex",gap:2,marginBottom:8,background:"rgba(0,0,0,0.3)",boxShadow:"inset 0 2px 6px rgba(0,0,0,0.3)"}},
-  [["log","▶ きろく"],["history","▶ れきし"],["badge","▶ バッジ"]].map(function(item){
-    return h("button",{key:item[0],style:ts(item[0]),onClick:function(){setTab(item[0]);}},item[1]);
-  })
-),
-
-tab==="log"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ぶいをえらぶ"),
-    h("div",{style:{display:"flex",gap:3}},
-      PARTS.map(function(p){
-        return h("button",{key:p,className:"dq-btn "+(part===p?"active":""),onClick:function(){setPart(p);},
-          style:{flex:1,fontSize:11,padding:"6px 2px",textAlign:"center",
-            color:part===p?PART_COLOR[p]:"#aaa",
-            borderBottom:part===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);
-      })
-    )
-  ),
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ しゅもくをえらぶ"),
-    h("select",{className:"dq-input",value:exercise,onChange:function(e){setExercise(e.target.value);},style:{width:"100%",fontSize:13}},
-      PRESETS[part].map(function(e){return h("option",{key:e,value:e},e);})
-    )
-  ),
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
-      [["じゅうりょう","kg",weight,setWeight,5,0],["かいすう","かい",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(function(item){
-        return h("div",{key:item[0]},
-          h("div",{style:{fontSize:10,color:"#aaa",marginBottom:4,textAlign:"center"}},item[0]),
-          h(Stepper,{value:item[2],onChange:item[3],step:item[4],min:item[5]}),
-          h("div",{style:{textAlign:"center",fontSize:11,marginTop:2,color:"#aaa"}},item[2]+item[1])
-        );
-      })
-    )
-  ),
-  h("button",{className:"dq-btn",onClick:handleRecord,style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid #ffdd00",color:"#ffdd00"}},"▶▶ きろくする"),
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8,display:"flex",alignItems:"center",gap:8}},
-    h("span",{style:{fontSize:12,color:"#aaa",whiteSpace:"nowrap"}},"プロテイン"),
-    h("div",{style:{flex:1}},h(Stepper,{value:protein,onChange:setProtein,step:1,min:1})),
-    h("span",{style:{fontSize:12,color:"#aaa",whiteSpace:"nowrap"}},protein+"ぱい"),
-    h("button",{className:"dq-btn",onClick:handleProtein,style:{whiteSpace:"nowrap",fontSize:12,color:"#4488ff"}},"+"+protein*10+"XP")
-  ),
-  recentLog.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ きょうのきろく"),
-    recentLog.map(function(l,i){
-      return h("div",{key:i,style:{borderBottom:i<recentLog.length-1?"1px solid #111144":"none",paddingBottom:6,marginBottom:6}},
-        h("div",{style:{display:"flex",justifyContent:"space-between"}},
-          h("span",{style:{fontSize:13}},l.exercise),
-          h("span",{style:{fontSize:13,color:"#ffdd00"}},"+"+l.xp+"XP")
+    h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+      h("div",{style:{display:"flex",gap:12,alignItems:"flex-start"}},
+        h("div",{style:{flexShrink:0,width:100,height:100,display:"flex",alignItems:"center",justifyContent:"center",background:"#000022",border:"2px solid #333366",position:"relative"}},
+          h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],
+            style:{maxWidth:96,maxHeight:96,objectFit:"contain",imageRendering:"pixelated"},
+            onError:function(e){e.target.style.opacity="0";e.target.nextSibling.style.display="flex";}}),
+          h("div",{style:{display:"none",position:"absolute",inset:0,alignItems:"center",justifyContent:"center",fontSize:10,color:"#666688",textAlign:"center"}},"画像を\nアップして")
         ),
-        h("div",{style:{fontSize:11,color:"#aaa",marginTop:1}},
-          h("span",{style:{color:PART_COLOR[l.part]}},l.part),
-          " "+l.weight+"kg x "+l.reps+"回 x "+l.sets+"set "+l.time
-        ),
-        h("div",{style:{fontSize:10,color:"#666688",marginTop:1}},l.xl.join(" / "))
-      );
-    })
-  ):null
-):null,
-
-tab==="history"?h("div",null,
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
-      [["そうセッション",data.totalSessions||0,"かい"],["さいちょうれんぞく",data.maxStreak||0,"にち"],
-       ["しゅもくすう",Object.keys(data.exercises||{}).length,"しゅ"],["プロテイン",data.totalProtein||0,"ぱい"],
-       ["さいだいじゅうりょう",data.maxWeight||0,"kg"],["そうセット",data.totalSets||0,"set"]].map(function(item){
-        return h("div",{key:item[0],style:{borderBottom:"1px solid #111144",paddingBottom:6}},
-          h("div",{style:{fontSize:10,color:"#aaa"}},item[0]),
-          h("div",{style:{fontSize:18,color:"#ffdd00"}},item[1],h("span",{style:{fontSize:11,color:"#aaa"}},item[2]))
-        );
-      })
-    )
-  ),
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ ぶいべつレベル"),
-    PARTS.map(function(p){
-      var pi=partLevelInfo((data.partXP||{})[p]||0);
-      return h("div",{key:p,style:{marginBottom:8}},
-        h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}},
-          h("span",{style:{color:PART_COLOR[p]}},p+" Lv."+pi.level),
-          h("span",{style:{color:"#aaa"}},pi.current+"/"+pi.needed)
-        ),
-        h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p]})
-      );
-    })
-  ),
-  Object.keys(data.exercises||{}).length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ しゅもくベスト"),
-    Object.entries(data.exercises||{}).map(function(entry){
-      var name=entry[0],e=entry[1];
-      return h("div",{key:name,style:{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,borderBottom:"1px solid #111144",padding:"4px 0"}},
-        h("div",null,
-          h("span",{style:{color:"#ffffff"}},name),
-          h("span",{style:{fontSize:10,marginLeft:6,color:PART_COLOR[e.part]||"#aaa"}},e.part)
-        ),
-        h("span",{style:{color:"#aaa"}},e.maxWeight+"kg x "+e.count+"回")
-      );
-    })
-  ):null,
-  h("div",{style:{marginTop:16}},
-    !showReset?h("button",{className:"dq-btn",onClick:function(){setShowReset(true);},style:{width:"100%",textAlign:"center",fontSize:12,padding:"10px",border:"2px solid #ff4444",color:"#ff4444"}},"▶ データをぜんぶけす"):
-    h("div",{className:"dq-win",style:{padding:"10px 12px",border:"3px solid #ff4444"}},
-      h("div",{style:{fontSize:13,color:"#ff4444",marginBottom:10,textAlign:"center"}},"ほんとうにぜんぶけしますか？"),
-      h("div",{style:{display:"flex",gap:8}},
-        h("button",{className:"dq-btn",onClick:handleReset,style:{flex:1,textAlign:"center",color:"#ff4444",border:"2px solid #ff4444",fontSize:13,padding:"10px"}},"▶ はい"),
-        h("button",{className:"dq-btn",onClick:function(){setShowReset(false);},style:{flex:1,textAlign:"center",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13,padding:"10px"}},"▶ いいえ")
-      )
-    )
-  )
-):null,
-
-tab==="badge"?h("div",null,
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:12,color:"#ffdd00"}},"バッジ "+earnedCount+" / "+BADGES.length),
-    h("div",{style:{fontSize:10,color:"#aaa",marginTop:2}},
-      "▓".repeat(Math.floor(earnedCount/BADGES.length*20))+"░".repeat(20-Math.floor(earnedCount/BADGES.length*20))
-    )
-  ),
-  h("div",{style:{display:"flex",flexDirection:"column",gap:4}},
-    BADGES.map(function(b){
-      var got=(data.badges||[]).includes(b.id);
-      return h("div",{key:b.id,className:"dq-win",style:{padding:"8px 10px",display:"flex",alignItems:"center",gap:8,opacity:got?1:0.4,borderColor:got?"#ffdd00":"#333366"}},
-        h("span",{style:{fontSize:16,flexShrink:0}},got?"★":"☆"),
         h("div",{style:{flex:1}},
-          h("div",{style:{fontSize:12,color:got?"#ffdd00":"#aaa"}},b.name),
-          h("div",{style:{fontSize:10,color:"#666688"}},b.desc)
-        ),
-        got?h("span",{style:{fontSize:10,color:"#44ff44"}},"かいほう"):null
-      );
-    })
-  )
-):null,
+          h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:6}},"ゴリラ"),
+          h("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:4}},
+            h("span",{style:{fontSize:11,color:"#aaa",width:24}},"LV"),
+            h("span",{style:{fontSize:16,color:"#fff"}},level)
+          ),
+          h("div",{style:{fontSize:11,color:"#aaa",marginBottom:2}},"けいけんち"),
+          h(DQBar,{value:current,max:needed,color:"#44ff44"}),
+          h("div",{style:{fontSize:10,color:"#aaa",marginTop:1}},current+"/"+needed),
+          h("div",{style:{fontSize:11,color:"#aaa",marginTop:6,marginBottom:2}},"そうXP"),
+          h("div",{style:{fontSize:13,color:"#ffdd00"}},data.totalXP||0)
+        )
+      ),
+      h("div",{style:{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 10px"}},
+        PARTS.map(function(p){
+          var pi=partLevelInfo((data.partXP||{})[p]||0);
+          return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:4}},
+            h("span",{style:{fontSize:10,color:PART_COLOR[p],width:22}},p),
+            h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p],width:"60px"}),
+            h("span",{style:{fontSize:10,color:"#aaa"}},"L"+pi.level)
+          );
+        })
+      )
+    ),
 
-h("div",{style:{height:24}})
-```
+    h("div",{style:{display:"flex",gap:2,marginBottom:8,background:"rgba(0,0,0,0.3)",boxShadow:"inset 0 2px 6px rgba(0,0,0,0.3)"}},
+      [["log","▶ きろく"],["history","▶ れきし"],["badge","▶ バッジ"]].map(function(item){
+        return h("button",{key:item[0],style:ts(item[0]),onClick:function(){setTab(item[0]);}},item[1]);
+      })
+    ),
 
-);
+    tab==="log"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ぶいをえらぶ"),
+        h("div",{style:{display:"flex",gap:3}},
+          PARTS.map(function(p){
+            return h("button",{key:p,className:"dq-btn "+(part===p?"active":""),onClick:function(){setPart(p);},
+              style:{flex:1,fontSize:11,padding:"6px 2px",textAlign:"center",
+                color:part===p?PART_COLOR[p]:"#aaa",
+                borderBottom:part===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);
+          })
+        )
+      ),
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ しゅもくをえらぶ"),
+        h("select",{className:"dq-input",value:exercise,onChange:function(e){setExercise(e.target.value);},style:{width:"100%",fontSize:13}},
+          PRESETS[part].map(function(e){return h("option",{key:e,value:e},e);})
+        )
+      ),
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
+          [["じゅうりょう","kg",weight,setWeight,5,0],["かいすう","かい",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(function(item){
+            return h("div",{key:item[0]},
+              h("div",{style:{fontSize:10,color:"#aaa",marginBottom:4,textAlign:"center"}},item[0]),
+              h(Stepper,{value:item[2],onChange:item[3],step:item[4],min:item[5]}),
+              h("div",{style:{textAlign:"center",fontSize:11,marginTop:2,color:"#aaa"}},item[2]+item[1])
+            );
+          })
+        )
+      ),
+      h("button",{className:"dq-btn",onClick:handleRecord,style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid #ffdd00",color:"#ffdd00"}},"▶▶ きろくする"),
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8,display:"flex",alignItems:"center",gap:8}},
+        h("span",{style:{fontSize:12,color:"#aaa",whiteSpace:"nowrap"}},"プロテイン"),
+        h("div",{style:{flex:1}},h(Stepper,{value:protein,onChange:setProtein,step:1,min:1})),
+        h("span",{style:{fontSize:12,color:"#aaa",whiteSpace:"nowrap"}},protein+"ぱい"),
+        h("button",{className:"dq-btn",onClick:handleProtein,style:{whiteSpace:"nowrap",fontSize:12,color:"#4488ff"}},"+"+protein*10+"XP")
+      ),
+      recentLog.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ きょうのきろく"),
+        recentLog.map(function(l,i){
+          return h("div",{key:i,style:{borderBottom:i<recentLog.length-1?"1px solid #111144":"none",paddingBottom:6,marginBottom:6}},
+            h("div",{style:{display:"flex",justifyContent:"space-between"}},
+              h("span",{style:{fontSize:13}},l.exercise),
+              h("span",{style:{fontSize:13,color:"#ffdd00"}},"+"+l.xp+"XP")
+            ),
+            h("div",{style:{fontSize:11,color:"#aaa",marginTop:1}},
+              h("span",{style:{color:PART_COLOR[l.part]}},l.part),
+              " "+l.weight+"kg x "+l.reps+"回 x "+l.sets+"set "+l.time
+            ),
+            h("div",{style:{fontSize:10,color:"#666688",marginTop:1}},l.xl.join(" / "))
+          );
+        })
+      ):null
+    ):null,
+
+    tab==="history"?h("div",null,
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+          [["そうセッション",data.totalSessions||0,"かい"],["さいちょうれんぞく",data.maxStreak||0,"にち"],
+           ["しゅもくすう",Object.keys(data.exercises||{}).length,"しゅ"],["プロテイン",data.totalProtein||0,"ぱい"],
+           ["さいだいじゅうりょう",data.maxWeight||0,"kg"],["そうセット",data.totalSets||0,"set"]].map(function(item){
+            return h("div",{key:item[0],style:{borderBottom:"1px solid #111144",paddingBottom:6}},
+              h("div",{style:{fontSize:10,color:"#aaa"}},item[0]),
+              h("div",{style:{fontSize:18,color:"#ffdd00"}},item[1],h("span",{style:{fontSize:11,color:"#aaa"}},item[2]))
+            );
+          })
+        )
+      ),
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ ぶいべつレベル"),
+        PARTS.map(function(p){
+          var pi=partLevelInfo((data.partXP||{})[p]||0);
+          return h("div",{key:p,style:{marginBottom:8}},
+            h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}},
+              h("span",{style:{color:PART_COLOR[p]}},p+" Lv."+pi.level),
+              h("span",{style:{color:"#aaa"}},pi.current+"/"+pi.needed)
+            ),
+            h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p]})
+          );
+        })
+      ),
+      Object.keys(data.exercises||{}).length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ しゅもくベスト"),
+        Object.entries(data.exercises||{}).map(function(entry){
+          var name=entry[0],e=entry[1];
+          return h("div",{key:name,style:{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,borderBottom:"1px solid #111144",padding:"4px 0"}},
+            h("div",null,
+              h("span",{style:{color:"#ffffff"}},name),
+              h("span",{style:{fontSize:10,marginLeft:6,color:PART_COLOR[e.part]||"#aaa"}},e.part)
+            ),
+            h("span",{style:{color:"#aaa"}},e.maxWeight+"kg x "+e.count+"回")
+          );
+        })
+      ):null,
+      h("div",{style:{marginTop:16}},
+        !showReset?h("button",{className:"dq-btn",onClick:function(){setShowReset(true);},style:{width:"100%",textAlign:"center",fontSize:12,padding:"10px",border:"2px solid #ff4444",color:"#ff4444"}},"▶ データをぜんぶけす"):
+        h("div",{className:"dq-win",style:{padding:"10px 12px",border:"3px solid #ff4444"}},
+          h("div",{style:{fontSize:13,color:"#ff4444",marginBottom:10,textAlign:"center"}},"ほんとうにぜんぶけしますか？"),
+          h("div",{style:{display:"flex",gap:8}},
+            h("button",{className:"dq-btn",onClick:handleReset,style:{flex:1,textAlign:"center",color:"#ff4444",border:"2px solid #ff4444",fontSize:13,padding:"10px"}},"▶ はい"),
+            h("button",{className:"dq-btn",onClick:function(){setShowReset(false);},style:{flex:1,textAlign:"center",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13,padding:"10px"}},"▶ いいえ")
+          )
+        )
+      )
+    ):null,
+
+    tab==="badge"?h("div",null,
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:12,color:"#ffdd00"}},"バッジ "+earnedCount+" / "+BADGES.length),
+        h("div",{style:{fontSize:10,color:"#aaa",marginTop:2}},
+          "▓".repeat(Math.floor(earnedCount/BADGES.length*20))+"░".repeat(20-Math.floor(earnedCount/BADGES.length*20))
+        )
+      ),
+      h("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+        BADGES.map(function(b){
+          var got=(data.badges||[]).includes(b.id);
+          return h("div",{key:b.id,className:"dq-win",style:{padding:"8px 10px",display:"flex",alignItems:"center",gap:8,opacity:got?1:0.4,borderColor:got?"#ffdd00":"#333366"}},
+            h("span",{style:{fontSize:16,flexShrink:0}},got?"★":"☆"),
+            h("div",{style:{flex:1}},
+              h("div",{style:{fontSize:12,color:got?"#ffdd00":"#aaa"}},b.name),
+              h("div",{style:{fontSize:10,color:"#666688"}},b.desc)
+            ),
+            got?h("span",{style:{fontSize:10,color:"#44ff44"}},"かいほう"):null
+          );
+        })
+      )
+    ):null,
+
+    h("div",{style:{height:24}})
+  );
 }
 
-ReactDOM.createRoot(document.getElementById(“root”)).render(React.createElement(App));
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
-
 </body>
 </html>
