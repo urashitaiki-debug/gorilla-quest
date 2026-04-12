@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
 <meta charset="UTF-8"/>
@@ -31,616 +30,612 @@ select,input{appearance:none;-webkit-appearance:none;}
 import{initializeApp}from"https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
 import{getFirestore,doc,setDoc,getDoc}from"https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 
-const firebaseConfig={apiKey:“AIzaSyChzYzgoK-k0Yk9ftiY7vMOeHDpYEOeDlw”,authDomain:“gorilla-quest-b189c.firebaseapp.com”,projectId:“gorilla-quest-b189c”,storageBucket:“gorilla-quest-b189c.firebasestorage.app”,messagingSenderId:“581762660070”,appId:“1:581762660070:web:803c2a77a9341b4c89ad27”};
+const firebaseConfig={apiKey:"AIzaSyChzYzgoK-k0Yk9ftiY7vMOeHDpYEOeDlw",authDomain:"gorilla-quest-b189c.firebaseapp.com",projectId:"gorilla-quest-b189c",storageBucket:"gorilla-quest-b189c.firebasestorage.app",messagingSenderId:"581762660070",appId:"1:581762660070:web:803c2a77a9341b4c89ad27"};
 const fbApp=initializeApp(firebaseConfig);
 const db=getFirestore(fbApp);
 
 // ユーザーIDを生成・取得
 function getOrCreateUserId(){
-var id=localStorage.getItem(“gq_uid”);
-if(!id){
-id=“GQ-”+Math.random().toString(36).slice(2,8).toUpperCase();
-localStorage.setItem(“gq_uid”,id);
-}
-return id;
+  var id=localStorage.getItem("gq_uid");
+  if(!id){
+    id="GQ-"+Math.random().toString(36).slice(2,8).toUpperCase();
+    localStorage.setItem("gq_uid",id);
+  }
+  return id;
 }
 
 // Firebaseにステータスを保存（ローカル保存のたびに呼ぶ）
 async function syncToFirebase(uid,data){
-try{
-await setDoc(doc(db,“users”,uid),{
-level:data.level||1,
-totalXP:data.totalXP||0,
-partXP:data.partXP||{},
-maxStreak:data.maxStreak||0,
-totalSessions:data.totalSessions||0,
-lastTraining:data.sessions&&data.sessions.length>0?data.sessions[data.sessions.length-1]:“なし”,
-updatedAt:new Date().toISOString()
-});
-}catch(e){console.log(“Firebase sync error”,e);}
+  try{
+    await setDoc(doc(db,"users",uid),{
+      level:data.level||1,
+      totalXP:data.totalXP||0,
+      partXP:data.partXP||{},
+      maxStreak:data.maxStreak||0,
+      totalSessions:data.totalSessions||0,
+      lastTraining:data.sessions&&data.sessions.length>0?data.sessions[data.sessions.length-1]:"なし",
+      updatedAt:new Date().toISOString()
+    });
+  }catch(e){console.log("Firebase sync error",e);}
 }
 
 // IDでユーザーを検索
 async function searchUser(uid){
-try{
-const snap=await getDoc(doc(db,“users”,uid));
-if(snap.exists())return snap.data();
-return null;
-}catch(e){return null;}
+  try{
+    const snap=await getDoc(doc(db,"users",uid));
+    if(snap.exists())return snap.data();
+    return null;
+  }catch(e){return null;}
 }
 
 window.GQ={getOrCreateUserId,syncToFirebase,searchUser};
 
 var h=React.createElement,useState=React.useState,useEffect=React.useEffect,useCallback=React.useCallback,useRef=React.useRef;
 
-var PARTS=[“胸”,“背中”,“脚”,“腕”,“肩”];
-var PART_COLOR={“胸”:”#ff6666”,“背中”:”#6699ff”,“脚”:”#66ff66”,“腕”:”#ffaa44”,“肩”:”#cc66ff”};
-var PRESETS={“胸”:[“ベンチプレス”,“ダンベルフライ”,“ケーブルクロスオーバー”,“ディップス”,“インクラインプレス”],“背中”:[“デッドリフト”,“ラットプルダウン”,“ベントオーバーロウ”,“チンアップ”],“脚”:[“スクワット”,“レッグプレス”,“ランジ”,“レッグカール”],“腕”:[“バーベルカール”,“ハンマーカール”,“トライセプスプレスダウン”,“スカルクラッシャー”],“肩”:[“ショルダープレス”,“サイドレイズ”,“フロントレイズ”,“フェイスプル”]};
+var PARTS=["胸","背中","脚","腕","肩"];
+var PART_COLOR={"胸":"#ff6666","背中":"#6699ff","脚":"#66ff66","腕":"#ffaa44","肩":"#cc66ff"};
+var PRESETS={"胸":["ベンチプレス","ダンベルフライ","ケーブルクロスオーバー","ディップス","インクラインプレス"],"背中":["デッドリフト","ラットプルダウン","ベントオーバーロウ","チンアップ"],"脚":["スクワット","レッグプレス","ランジ","レッグカール"],"腕":["バーベルカール","ハンマーカール","トライセプスプレスダウン","スカルクラッシャー"],"肩":["ショルダープレス","サイドレイズ","フロントレイズ","フェイスプル"]};
 var ALL_EXERCISES=[];Object.values(PRESETS).forEach(function(a){a.forEach(function(e){if(ALL_EXERCISES.indexOf(e)<0)ALL_EXERCISES.push(e);});});
 
-var BASE_URL=“https://urashitaiki-debug.github.io/gorilla-quest/”;
-var GORILLA_IMGS=[BASE_URL+“stage0.png”,BASE_URL+“stage1.png”,BASE_URL+“stage2.png”,BASE_URL+“stage3.png”,BASE_URL+“stage4.png”];
-var STAGE_LABELS=[“あかちゃんゴリラ”,“こゴリラ”,“わかゴリラ”,“おとなゴリラ”,“さいきょうゴリラ”];
+var BASE_URL="https://urashitaiki-debug.github.io/gorilla-quest/";
+var GORILLA_IMGS=[BASE_URL+"stage0.png",BASE_URL+"stage1.png",BASE_URL+"stage2.png",BASE_URL+"stage3.png",BASE_URL+"stage4.png"];
+var STAGE_LABELS=["あかちゃんゴリラ","こゴリラ","わかゴリラ","おとなゴリラ","さいきょうゴリラ"];
 var VALID_MS=2*60*60*1000;
-var SK=“gorilla_quest_v3”;
-var CK=“gorilla_checkin_v1”;
-var MK=“gorilla_menus_v1”;
+var SK="gorilla_quest_v3";
+var CK="gorilla_checkin_v1";
+var MK="gorilla_menus_v1";
 
 function levelInfo(xp){var lv=1,rem=xp,needed=100;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.3);}return{level:lv,current:rem,needed:needed};}
 function partLevelInfo(xp){var lv=1,rem=xp,needed=50;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.4);}return{level:lv,current:rem,needed:needed};}
 function getToday(){return new Date().toISOString().slice(0,10);}
 function getHour(){return new Date().getHours();}
-function getStreak(dates){if(!dates.length)return 0;var uniq=[…new Set(dates)].sort().reverse();var s=1;for(var i=0;i<uniq.length-1;i++){if((new Date(uniq[i])-new Date(uniq[i+1]))/86400000===1)s++;else break;}return s;}
+function getStreak(dates){if(!dates.length)return 0;var uniq=[...new Set(dates)].sort().reverse();var s=1;for(var i=0;i<uniq.length-1;i++){if((new Date(uniq[i])-new Date(uniq[i+1]))/86400000===1)s++;else break;}return s;}
 function getStage(lv){if(lv<3)return 0;if(lv<6)return 1;if(lv<10)return 2;if(lv<15)return 3;return 4;}
-function fmtTime(ms){var m=Math.floor(ms/60000);var s=Math.floor((ms%60000)/1000);return m+“分”+(“0”+s).slice(-2)+“秒”;}
-function getPartForExercise(ex){var found=“胸”;Object.keys(PRESETS).forEach(function(p){if(PRESETS[p].indexOf(ex)>=0)found=p;});return found;}
+function fmtTime(ms){var m=Math.floor(ms/60000);var s=Math.floor((ms%60000)/1000);return m+"分"+("0"+s).slice(-2)+"秒";}
+function getPartForExercise(ex){var found="胸";Object.keys(PRESETS).forEach(function(p){if(PRESETS[p].indexOf(ex)>=0)found=p;});return found;}
 
 // デフォルトメニュー
 var DEFAULT_MENUS=[
-{name:“メニューA”,items:[{exercise:“ベンチプレス”,weight:60,reps:10,sets:3},{exercise:“ダンベルフライ”,weight:20,reps:10,sets:3}]},
-{name:“メニューB”,items:[{exercise:“スクワット”,weight:60,reps:10,sets:3},{exercise:“レッグプレス”,weight:80,reps:10,sets:3}]},
-{name:“メニューC”,items:[{exercise:“デッドリフト”,weight:70,reps:10,sets:3},{exercise:“ラットプルダウン”,weight:50,reps:10,sets:3}]},
+  {name:"メニューA",items:[{exercise:"ベンチプレス",weight:60,reps:10,sets:3},{exercise:"ダンベルフライ",weight:20,reps:10,sets:3}]},
+  {name:"メニューB",items:[{exercise:"スクワット",weight:60,reps:10,sets:3},{exercise:"レッグプレス",weight:80,reps:10,sets:3}]},
+  {name:"メニューC",items:[{exercise:"デッドリフト",weight:70,reps:10,sets:3},{exercise:"ラットプルダウン",weight:50,reps:10,sets:3}]},
 ];
 
 var BADGES=[
-{id:“b001”,name:“スライムをたおした！”,desc:“はじめてのきろく”,cond:function(s){return(s.totalSessions||0)>=1;}},
-{id:“b002”,name:“ドラキーをたおした！”,desc:“3かいきろくした”,cond:function(s){return(s.totalSessions||0)>=3;}},
-{id:“b003”,name:“おおありをたおした！”,desc:“10かいきろくした”,cond:function(s){return(s.totalSessions||0)>=10;}},
-{id:“b004”,name:“いしにんぎょうをたおした！”,desc:“20かいきろくした”,cond:function(s){return(s.totalSessions||0)>=20;}},
-{id:“b005”,name:“ゴーレムをたおした！”,desc:“50かいきろくした”,cond:function(s){return(s.totalSessions||0)>=50;}},
-{id:“b006”,name:“キングスライムをたおした！”,desc:“100かいきろくした”,cond:function(s){return(s.totalSessions||0)>=100;}},
-{id:“b007”,name:“りゅうをたおした！”,desc:“200かいきろくした”,cond:function(s){return(s.totalSessions||0)>=200;}},
-{id:“b010”,name:“まものの巣にふみこんだ！”,desc:“2にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=2;}},
-{id:“b011”,name:“あんこくのとびらをこえた！”,desc:“3にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=3;}},
-{id:“b012”,name:“ちていのダンジョンをでた！”,desc:“7にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=7;}},
-{id:“b013”,name:“まおうのしろにちかづいた！”,desc:“14にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=14;}},
-{id:“b014”,name:“つきのかいだんをのぼった！”,desc:“30にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=30;}},
-{id:“b015”,name:“でんせつのゴリラ！”,desc:“60にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=60;}},
-{id:“b016”,name:“しんわのれんぞく！”,desc:“100にちれんぞく”,cond:function(s){return(s.maxStreak||0)>=100;}},
-{id:“b020”,name:“ゆうしゃのちからめざめた！”,desc:“レベル5とうたつ”,cond:function(s){return(s.level||1)>=5;}},
-{id:“b021”,name:“ちゅうきゅうぼうけんしゃ！”,desc:“レベル10とうたつ”,cond:function(s){return(s.level||1)>=10;}},
-{id:“b022”,name:“つわものといわれた！”,desc:“レベル15とうたつ”,cond:function(s){return(s.level||1)>=15;}},
-{id:“b023”,name:“えいゆうのしょうごうをえた！”,desc:“レベル20とうたつ”,cond:function(s){return(s.level||1)>=20;}},
-{id:“b024”,name:“でんせつのゆうしゃ！”,desc:“レベル30とうたつ”,cond:function(s){return(s.level||1)>=30;}},
-{id:“b025”,name:“ゴリラまおうをたおした！”,desc:“レベル50とうたつ”,cond:function(s){return(s.level||1)>=50;}},
-{id:“b030”,name:“あたらしいわざをおぼえた！”,desc:“しゅもく3しゅるい”,cond:function(s){return Object.keys(s.exercises||{}).length>=3;}},
-{id:“b031”,name:“わざのしょをみつけた！”,desc:“しゅもく5しゅるい”,cond:function(s){return Object.keys(s.exercises||{}).length>=5;}},
-{id:“b032”,name:“ひでんのわざをうけついだ！”,desc:“しゅもく10しゅるい”,cond:function(s){return Object.keys(s.exercises||{}).length>=10;}},
-{id:“b033”,name:“わざのたつじん！”,desc:“しゅもく15しゅるい”,cond:function(s){return Object.keys(s.exercises||{}).length>=15;}},
-{id:“b040”,name:“やくそうをのんだ！”,desc:“プロテイン1ぱい”,cond:function(s){return(s.totalProtein||0)>=1;}},
-{id:“b041”,name:“まほうのくすりをのんだ！”,desc:“プロテイン10ぱい”,cond:function(s){return(s.totalProtein||0)>=10;}},
-{id:“b042”,name:“せいすいをてにいれた！”,desc:“プロテイン30ぱい”,cond:function(s){return(s.totalProtein||0)>=30;}},
-{id:“b043”,name:“でんせつのエリクサー！”,desc:“プロテイン100ぱい”,cond:function(s){return(s.totalProtein||0)>=100;}},
-{id:“b050”,name:“けいけんちをためた！”,desc:“そうXP100”,cond:function(s){return(s.totalXP||0)>=100;}},
-{id:“b051”,name:“ちからがみなぎってきた！”,desc:“そうXP500”,cond:function(s){return(s.totalXP||0)>=500;}},
-{id:“b052”,name:“つよさがあふれだした！”,desc:“そうXP1000”,cond:function(s){return(s.totalXP||0)>=1000;}},
-{id:“b053”,name:“でんせつのつよさ！”,desc:“そうXP5000”,cond:function(s){return(s.totalXP||0)>=5000;}},
-{id:“b054”,name:“かみのちから！”,desc:“そうXP10000”,cond:function(s){return(s.totalXP||0)>=10000;}},
-{id:“b060”,name:“むねのよろいをてにいれた！”,desc:“むねLv3”,cond:function(s){return partLevelInfo((s.partXP||{})[“胸”]||0).level>=3;}},
-{id:“b061”,name:“むねのおうかんをかぶった！”,desc:“むねLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“胸”]||0).level>=5;}},
-{id:“b062”,name:“むねのでんせつ！”,desc:“むねLv10”,cond:function(s){return partLevelInfo((s.partXP||{})[“胸”]||0).level>=10;}},
-{id:“b063”,name:“せなかのよろいをてにいれた！”,desc:“せなかLv3”,cond:function(s){return partLevelInfo((s.partXP||{})[“背中”]||0).level>=3;}},
-{id:“b064”,name:“せなかのおうかんをかぶった！”,desc:“せなかLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“背中”]||0).level>=5;}},
-{id:“b065”,name:“せなかのでんせつ！”,desc:“せなかLv10”,cond:function(s){return partLevelInfo((s.partXP||{})[“背中”]||0).level>=10;}},
-{id:“b066”,name:“あしのよろいをてにいれた！”,desc:“あしLv3”,cond:function(s){return partLevelInfo((s.partXP||{})[“脚”]||0).level>=3;}},
-{id:“b067”,name:“あしのおうかんをかぶった！”,desc:“あしLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“脚”]||0).level>=5;}},
-{id:“b068”,name:“あしのでんせつ！”,desc:“あしLv10”,cond:function(s){return partLevelInfo((s.partXP||{})[“脚”]||0).level>=10;}},
-{id:“b069”,name:“うでのよろいをてにいれた！”,desc:“うでLv3”,cond:function(s){return partLevelInfo((s.partXP||{})[“腕”]||0).level>=3;}},
-{id:“b070”,name:“うでのおうかんをかぶった！”,desc:“うでLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“腕”]||0).level>=5;}},
-{id:“b071”,name:“うでのでんせつ！”,desc:“うでLv10”,cond:function(s){return partLevelInfo((s.partXP||{})[“腕”]||0).level>=10;}},
-{id:“b072”,name:“かたのよろいをてにいれた！”,desc:“かたLv3”,cond:function(s){return partLevelInfo((s.partXP||{})[“肩”]||0).level>=3;}},
-{id:“b073”,name:“かたのおうかんをかぶった！”,desc:“かたLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“肩”]||0).level>=5;}},
-{id:“b074”,name:“かたのでんせつ！”,desc:“かたLv10”,cond:function(s){return partLevelInfo((s.partXP||{})[“肩”]||0).level>=10;}},
-{id:“b075”,name:“ゆうしゃのしょうごう！”,desc:“ぜんぶいLv3いじょう”,cond:function(s){return PARTS.every(function(p){return partLevelInfo((s.partXP||{})[p]||0).level>=3;});}},
-{id:“b076”,name:“せんしのしょうごう！”,desc:“ぜんぶいLv5いじょう”,cond:function(s){return PARTS.every(function(p){return partLevelInfo((s.partXP||{})[p]||0).level>=5;});}},
-{id:“b077”,name:“ちょうぜつのせんし！”,desc:“ぜんぶいLv10いじょう”,cond:function(s){return PARTS.every(function(p){return partLevelInfo((s.partXP||{})[p]||0).level>=10;});}},
-{id:“b080”,name:“つきのあかりのもとで…”,desc:“よるのきろく（0〜5じ）”,cond:function(s){return s.nightRecord||false;}},
-{id:“b081”,name:“あさのめざめ！”,desc:“あさのきろく（5〜7じ）”,cond:function(s){return s.morningRecord||false;}},
-{id:“b082”,name:“まひるのたいようのした！”,desc:“ひるのきろく（12〜13じ）”,cond:function(s){return s.noonRecord||false;}},
-{id:“b083”,name:“じこベストをこえた！”,desc:“はじめてのじこベスト”,cond:function(s){return(s.prCount||0)>=1;}},
-{id:“b084”,name:“じこベストのつわもの！”,desc:“じこベスト10かい”,cond:function(s){return(s.prCount||0)>=10;}},
-{id:“b085”,name:“じこベストのでんせつ！”,desc:“じこベスト30かい”,cond:function(s){return(s.prCount||0)>=30;}},
-{id:“b090”,name:“おもいいわをもちあげた！”,desc:“じゅうりょう50kg”,cond:function(s){return(s.maxWeight||0)>=50;}},
-{id:“b091”,name:“ひゃっきゃくのかべをこえた！”,desc:“じゅうりょう100kg”,cond:function(s){return(s.maxWeight||0)>=100;}},
-{id:“b092”,name:“てつのゴリラのちから！”,desc:“じゅうりょう150kg”,cond:function(s){return(s.maxWeight||0)>=150;}},
-{id:“b093”,name:“でんせつのじゅうりょう！”,desc:“じゅうりょう200kg”,cond:function(s){return(s.maxWeight||0)>=200;}},
-{id:“b094”,name:“はじめてのセット！”,desc:“そうセット10”,cond:function(s){return(s.totalSets||0)>=10;}},
-{id:“b095”,name:“セットのつわもの！”,desc:“そうセット100”,cond:function(s){return(s.totalSets||0)>=100;}},
-{id:“b096”,name:“セットのでんせつ！”,desc:“そうセット500”,cond:function(s){return(s.totalSets||0)>=500;}},
-{id:“b097”,name:“セットのかみ！”,desc:“そうセット1000”,cond:function(s){return(s.totalSets||0)>=1000;}},
-{id:“b100”,name:“もくもくとはたらくもの”,desc:“いちにちに3かいきろく”,cond:function(s){return(s.maxDailySessions||0)>=3;}},
-{id:“b101”,name:“きわめしもの”,desc:“じゅうりょう80kgいじょう”,cond:function(s){return(s.maxWeight||0)>=80;}},
-{id:“b102”,name:“ゴリラのたましい”,desc:“セッション75かい”,cond:function(s){return(s.totalSessions||0)>=75;}},
-{id:“b103”,name:“てんさいゴリラ”,desc:“しゅもく8しゅるい+レベル10”,cond:function(s){return Object.keys(s.exercises||{}).length>=8&&(s.level||1)>=10;}},
-{id:“b104”,name:“かぜをよぶゴリラ”,desc:“7にちれんぞく+レベル5”,cond:function(s){return(s.maxStreak||0)>=7&&(s.level||1)>=5;}},
-{id:“b105”,name:“だいちのちからをうけた”,desc:“あしLv5+せなかLv5”,cond:function(s){return partLevelInfo((s.partXP||{})[“脚”]||0).level>=5&&partLevelInfo((s.partXP||{})[“背中”]||0).level>=5;}},
-{id:“b106”,name:“てんくうのつるぎをてにいれた”,desc:“むね+かた+うでLv5”,cond:function(s){return[“胸”,“肩”,“腕”].every(function(p){return partLevelInfo((s.partXP||{})[p]||0).level>=5;});}},
-{id:“b107”,name:“しんわのゴリラとなった！”,desc:“レベル40とうたつ”,cond:function(s){return(s.level||1)>=40;}},
-{id:“b110”,name:“カメラをきどうした！”,desc:“はじめてのトレーニング開始”,cond:function(s){return(s.totalCheckIns||0)>=1;}},
-{id:“b111”,name:“きろくのけんし！”,desc:“チェックイン10かい”,cond:function(s){return(s.totalCheckIns||0)>=10;}},
-{id:“b112”,name:“チェックインのでんせつ！”,desc:“チェックイン30かい”,cond:function(s){return(s.totalCheckIns||0)>=30;}},
-{id:“b120”,name:“メニューをつかった！”,desc:“メニューきろくはじめて”,cond:function(s){return(s.menuRecords||0)>=1;}},
-{id:“b121”,name:“メニューのつわもの！”,desc:“メニューきろく20かい”,cond:function(s){return(s.menuRecords||0)>=20;}},
-{id:“b122”,name:“メニューのでんせつ！”,desc:“メニューきろく50かい”,cond:function(s){return(s.menuRecords||0)>=50;}},
+  {id:"b001",name:"スライムをたおした！",desc:"はじめてのきろく",cond:function(s){return(s.totalSessions||0)>=1;}},
+  {id:"b002",name:"ドラキーをたおした！",desc:"3かいきろくした",cond:function(s){return(s.totalSessions||0)>=3;}},
+  {id:"b003",name:"おおありをたおした！",desc:"10かいきろくした",cond:function(s){return(s.totalSessions||0)>=10;}},
+  {id:"b004",name:"いしにんぎょうをたおした！",desc:"20かいきろくした",cond:function(s){return(s.totalSessions||0)>=20;}},
+  {id:"b005",name:"ゴーレムをたおした！",desc:"50かいきろくした",cond:function(s){return(s.totalSessions||0)>=50;}},
+  {id:"b006",name:"キングスライムをたおした！",desc:"100かいきろくした",cond:function(s){return(s.totalSessions||0)>=100;}},
+  {id:"b007",name:"りゅうをたおした！",desc:"200かいきろくした",cond:function(s){return(s.totalSessions||0)>=200;}},
+  {id:"b010",name:"まものの巣にふみこんだ！",desc:"2にちれんぞく",cond:function(s){return(s.maxStreak||0)>=2;}},
+  {id:"b011",name:"あんこくのとびらをこえた！",desc:"3にちれんぞく",cond:function(s){return(s.maxStreak||0)>=3;}},
+  {id:"b012",name:"ちていのダンジョンをでた！",desc:"7にちれんぞく",cond:function(s){return(s.maxStreak||0)>=7;}},
+  {id:"b013",name:"まおうのしろにちかづいた！",desc:"14にちれんぞく",cond:function(s){return(s.maxStreak||0)>=14;}},
+  {id:"b014",name:"つきのかいだんをのぼった！",desc:"30にちれんぞく",cond:function(s){return(s.maxStreak||0)>=30;}},
+  {id:"b015",name:"でんせつのゴリラ！",desc:"60にちれんぞく",cond:function(s){return(s.maxStreak||0)>=60;}},
+  {id:"b016",name:"しんわのれんぞく！",desc:"100にちれんぞく",cond:function(s){return(s.maxStreak||0)>=100;}},
+  {id:"b020",name:"ゆうしゃのちからめざめた！",desc:"レベル5とうたつ",cond:function(s){return(s.level||1)>=5;}},
+  {id:"b021",name:"ちゅうきゅうぼうけんしゃ！",desc:"レベル10とうたつ",cond:function(s){return(s.level||1)>=10;}},
+  {id:"b022",name:"つわものといわれた！",desc:"レベル15とうたつ",cond:function(s){return(s.level||1)>=15;}},
+  {id:"b023",name:"えいゆうのしょうごうをえた！",desc:"レベル20とうたつ",cond:function(s){return(s.level||1)>=20;}},
+  {id:"b024",name:"でんせつのゆうしゃ！",desc:"レベル30とうたつ",cond:function(s){return(s.level||1)>=30;}},
+  {id:"b025",name:"ゴリラまおうをたおした！",desc:"レベル50とうたつ",cond:function(s){return(s.level||1)>=50;}},
+  {id:"b030",name:"あたらしいわざをおぼえた！",desc:"しゅもく3しゅるい",cond:function(s){return Object.keys(s.exercises||{}).length>=3;}},
+  {id:"b031",name:"わざのしょをみつけた！",desc:"しゅもく5しゅるい",cond:function(s){return Object.keys(s.exercises||{}).length>=5;}},
+  {id:"b032",name:"ひでんのわざをうけついだ！",desc:"しゅもく10しゅるい",cond:function(s){return Object.keys(s.exercises||{}).length>=10;}},
+  {id:"b033",name:"わざのたつじん！",desc:"しゅもく15しゅるい",cond:function(s){return Object.keys(s.exercises||{}).length>=15;}},
+  {id:"b040",name:"やくそうをのんだ！",desc:"プロテイン1ぱい",cond:function(s){return(s.totalProtein||0)>=1;}},
+  {id:"b041",name:"まほうのくすりをのんだ！",desc:"プロテイン10ぱい",cond:function(s){return(s.totalProtein||0)>=10;}},
+  {id:"b042",name:"せいすいをてにいれた！",desc:"プロテイン30ぱい",cond:function(s){return(s.totalProtein||0)>=30;}},
+  {id:"b043",name:"でんせつのエリクサー！",desc:"プロテイン100ぱい",cond:function(s){return(s.totalProtein||0)>=100;}},
+  {id:"b050",name:"けいけんちをためた！",desc:"そうXP100",cond:function(s){return(s.totalXP||0)>=100;}},
+  {id:"b051",name:"ちからがみなぎってきた！",desc:"そうXP500",cond:function(s){return(s.totalXP||0)>=500;}},
+  {id:"b052",name:"つよさがあふれだした！",desc:"そうXP1000",cond:function(s){return(s.totalXP||0)>=1000;}},
+  {id:"b053",name:"でんせつのつよさ！",desc:"そうXP5000",cond:function(s){return(s.totalXP||0)>=5000;}},
+  {id:"b054",name:"かみのちから！",desc:"そうXP10000",cond:function(s){return(s.totalXP||0)>=10000;}},
+  {id:"b060",name:"むねのよろいをてにいれた！",desc:"むねLv3",cond:function(s){return partLevelInfo((s.partXP||{})["胸"]||0).level>=3;}},
+  {id:"b061",name:"むねのおうかんをかぶった！",desc:"むねLv5",cond:function(s){return partLevelInfo((s.partXP||{})["胸"]||0).level>=5;}},
+  {id:"b062",name:"むねのでんせつ！",desc:"むねLv10",cond:function(s){return partLevelInfo((s.partXP||{})["胸"]||0).level>=10;}},
+  {id:"b063",name:"せなかのよろいをてにいれた！",desc:"せなかLv3",cond:function(s){return partLevelInfo((s.partXP||{})["背中"]||0).level>=3;}},
+  {id:"b064",name:"せなかのおうかんをかぶった！",desc:"せなかLv5",cond:function(s){return partLevelInfo((s.partXP||{})["背中"]||0).level>=5;}},
+  {id:"b065",name:"せなかのでんせつ！",desc:"せなかLv10",cond:function(s){return partLevelInfo((s.partXP||{})["背中"]||0).level>=10;}},
+  {id:"b066",name:"あしのよろいをてにいれた！",desc:"あしLv3",cond:function(s){return partLevelInfo((s.partXP||{})["脚"]||0).level>=3;}},
+  {id:"b067",name:"あしのおうかんをかぶった！",desc:"あしLv5",cond:function(s){return partLevelInfo((s.partXP||{})["脚"]||0).level>=5;}},
+  {id:"b068",name:"あしのでんせつ！",desc:"あしLv10",cond:function(s){return partLevelInfo((s.partXP||{})["脚"]||0).level>=10;}},
+  {id:"b069",name:"うでのよろいをてにいれた！",desc:"うでLv3",cond:function(s){return partLevelInfo((s.partXP||{})["腕"]||0).level>=3;}},
+  {id:"b070",name:"うでのおうかんをかぶった！",desc:"うでLv5",cond:function(s){return partLevelInfo((s.partXP||{})["腕"]||0).level>=5;}},
+  {id:"b071",name:"うでのでんせつ！",desc:"うでLv10",cond:function(s){return partLevelInfo((s.partXP||{})["腕"]||0).level>=10;}},
+  {id:"b072",name:"かたのよろいをてにいれた！",desc:"かたLv3",cond:function(s){return partLevelInfo((s.partXP||{})["肩"]||0).level>=3;}},
+  {id:"b073",name:"かたのおうかんをかぶった！",desc:"かたLv5",cond:function(s){return partLevelInfo((s.partXP||{})["肩"]||0).level>=5;}},
+  {id:"b074",name:"かたのでんせつ！",desc:"かたLv10",cond:function(s){return partLevelInfo((s.partXP||{})["肩"]||0).level>=10;}},
+  {id:"b075",name:"ゆうしゃのしょうごう！",desc:"ぜんぶいLv3いじょう",cond:function(s){return PARTS.every(function(p){return partLevelInfo((s.partXP||{})[p]||0).level>=3;});}},
+  {id:"b076",name:"せんしのしょうごう！",desc:"ぜんぶいLv5いじょう",cond:function(s){return PARTS.every(function(p){return partLevelInfo((s.partXP||{})[p]||0).level>=5;});}},
+  {id:"b077",name:"ちょうぜつのせんし！",desc:"ぜんぶいLv10いじょう",cond:function(s){return PARTS.every(function(p){return partLevelInfo((s.partXP||{})[p]||0).level>=10;});}},
+  {id:"b080",name:"つきのあかりのもとで…",desc:"よるのきろく（0〜5じ）",cond:function(s){return s.nightRecord||false;}},
+  {id:"b081",name:"あさのめざめ！",desc:"あさのきろく（5〜7じ）",cond:function(s){return s.morningRecord||false;}},
+  {id:"b082",name:"まひるのたいようのした！",desc:"ひるのきろく（12〜13じ）",cond:function(s){return s.noonRecord||false;}},
+  {id:"b083",name:"じこベストをこえた！",desc:"はじめてのじこベスト",cond:function(s){return(s.prCount||0)>=1;}},
+  {id:"b084",name:"じこベストのつわもの！",desc:"じこベスト10かい",cond:function(s){return(s.prCount||0)>=10;}},
+  {id:"b085",name:"じこベストのでんせつ！",desc:"じこベスト30かい",cond:function(s){return(s.prCount||0)>=30;}},
+  {id:"b090",name:"おもいいわをもちあげた！",desc:"じゅうりょう50kg",cond:function(s){return(s.maxWeight||0)>=50;}},
+  {id:"b091",name:"ひゃっきゃくのかべをこえた！",desc:"じゅうりょう100kg",cond:function(s){return(s.maxWeight||0)>=100;}},
+  {id:"b092",name:"てつのゴリラのちから！",desc:"じゅうりょう150kg",cond:function(s){return(s.maxWeight||0)>=150;}},
+  {id:"b093",name:"でんせつのじゅうりょう！",desc:"じゅうりょう200kg",cond:function(s){return(s.maxWeight||0)>=200;}},
+  {id:"b094",name:"はじめてのセット！",desc:"そうセット10",cond:function(s){return(s.totalSets||0)>=10;}},
+  {id:"b095",name:"セットのつわもの！",desc:"そうセット100",cond:function(s){return(s.totalSets||0)>=100;}},
+  {id:"b096",name:"セットのでんせつ！",desc:"そうセット500",cond:function(s){return(s.totalSets||0)>=500;}},
+  {id:"b097",name:"セットのかみ！",desc:"そうセット1000",cond:function(s){return(s.totalSets||0)>=1000;}},
+  {id:"b100",name:"もくもくとはたらくもの",desc:"いちにちに3かいきろく",cond:function(s){return(s.maxDailySessions||0)>=3;}},
+  {id:"b101",name:"きわめしもの",desc:"じゅうりょう80kgいじょう",cond:function(s){return(s.maxWeight||0)>=80;}},
+  {id:"b102",name:"ゴリラのたましい",desc:"セッション75かい",cond:function(s){return(s.totalSessions||0)>=75;}},
+  {id:"b103",name:"てんさいゴリラ",desc:"しゅもく8しゅるい+レベル10",cond:function(s){return Object.keys(s.exercises||{}).length>=8&&(s.level||1)>=10;}},
+  {id:"b104",name:"かぜをよぶゴリラ",desc:"7にちれんぞく+レベル5",cond:function(s){return(s.maxStreak||0)>=7&&(s.level||1)>=5;}},
+  {id:"b105",name:"だいちのちからをうけた",desc:"あしLv5+せなかLv5",cond:function(s){return partLevelInfo((s.partXP||{})["脚"]||0).level>=5&&partLevelInfo((s.partXP||{})["背中"]||0).level>=5;}},
+  {id:"b106",name:"てんくうのつるぎをてにいれた",desc:"むね+かた+うでLv5",cond:function(s){return["胸","肩","腕"].every(function(p){return partLevelInfo((s.partXP||{})[p]||0).level>=5;});}},
+  {id:"b107",name:"しんわのゴリラとなった！",desc:"レベル40とうたつ",cond:function(s){return(s.level||1)>=40;}},
+  {id:"b110",name:"カメラをきどうした！",desc:"はじめてのトレーニング開始",cond:function(s){return(s.totalCheckIns||0)>=1;}},
+  {id:"b111",name:"きろくのけんし！",desc:"チェックイン10かい",cond:function(s){return(s.totalCheckIns||0)>=10;}},
+  {id:"b112",name:"チェックインのでんせつ！",desc:"チェックイン30かい",cond:function(s){return(s.totalCheckIns||0)>=30;}},
+  {id:"b120",name:"メニューをつかった！",desc:"メニューきろくはじめて",cond:function(s){return(s.menuRecords||0)>=1;}},
+  {id:"b121",name:"メニューのつわもの！",desc:"メニューきろく20かい",cond:function(s){return(s.menuRecords||0)>=20;}},
+  {id:"b122",name:"メニューのでんせつ！",desc:"メニューきろく50かい",cond:function(s){return(s.menuRecords||0)>=50;}},
 ];
 
 // ── UI parts ──
-function DQBar(props){var pct=Math.min(Math.round((props.value/props.max)*100),100);return h(“div”,{style:{width:props.width||“100%”,height:10,background:”#001100”,border:“1px solid #336633”,display:“inline-block”,verticalAlign:“middle”}},h(“div”,{style:{height:“100%”,width:pct+”%”,background:props.color,transition:“width 0.4s”}}));}
-function Stepper(props){var value=props.value,onChange=props.onChange,step=props.step||5,min=props.min||0;return h(“div”,{style:{display:“flex”,alignItems:“center”}},h(“button”,{className:“dq-btn”,onClick:function(){onChange(Math.max(min,value-step));},style:{width:32,textAlign:“center”,padding:“4px”,fontSize:14}},“◀”),h(“span”,{style:{flex:1,textAlign:“center”,fontSize:13,color:”#ffdd00”,background:”#000011”,padding:“5px 0”,border:“2px solid #4444aa”,borderLeft:“none”,borderRight:“none”}},value),h(“button”,{className:“dq-btn”,onClick:function(){onChange(value+step);},style:{width:32,textAlign:“center”,padding:“4px”,fontSize:14}},“▶”));}
+function DQBar(props){var pct=Math.min(Math.round((props.value/props.max)*100),100);return h("div",{style:{width:props.width||"100%",height:10,background:"#001100",border:"1px solid #336633",display:"inline-block",verticalAlign:"middle"}},h("div",{style:{height:"100%",width:pct+"%",background:props.color,transition:"width 0.4s"}}));}
+function Stepper(props){var value=props.value,onChange=props.onChange,step=props.step||5,min=props.min||0;return h("div",{style:{display:"flex",alignItems:"center"}},h("button",{className:"dq-btn",onClick:function(){onChange(Math.max(min,value-step));},style:{width:32,textAlign:"center",padding:"4px",fontSize:14}},"◀"),h("span",{style:{flex:1,textAlign:"center",fontSize:13,color:"#ffdd00",background:"#000011",padding:"5px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},value),h("button",{className:"dq-btn",onClick:function(){onChange(value+step);},style:{width:32,textAlign:"center",padding:"4px",fontSize:14}},"▶"));}
 
-function LevelUpOverlay(props){useEffect(function(){var t=setTimeout(props.onDone,2800);return function(){clearTimeout(t);};},[]);return h(“div”,{style:{position:“fixed”,inset:0,zIndex:1000,display:“flex”,alignItems:“center”,justifyContent:“center”,pointerEvents:“none”}},h(“div”,{style:{animation:“flash 0.3s ease 2”,background:“rgba(255,255,100,0.12)”,position:“absolute”,inset:0}}),h(“div”,{className:“dq-win”,style:{padding:“20px 32px”,textAlign:“center”,animation:“levelup 2.8s ease forwards”,border:“4px solid #ffdd00”}},h(“div”,{style:{fontSize:13,color:”#ffdd00”,marginBottom:8}},“✦ ✦ ✦”),h(“div”,{style:{fontSize:18,color:”#ffdd00”,lineHeight:1.8}},“レベルが あがった！”,h(“br”),h(“span”,{style:{fontSize:24,color:”#fff”}},“Lv.”+props.level)),h(“div”,{style:{fontSize:13,color:”#ffdd00”,marginTop:8}},“✦ ✦ ✦”)));}
-function XPPop(props){useEffect(function(){var t=setTimeout(props.onDone,1400);return function(){clearTimeout(t);};},[]);return h(“div”,{style:{position:“fixed”,top:“30%”,left:“50%”,transform:“translateX(-50%)”,zIndex:900,pointerEvents:“none”,animation:“xpPop 1.4s ease forwards”,fontSize:20,color:”#ffdd00”,textShadow:“0 0 8px #ffdd00”}},“＋”+props.xp+“XP”);}
-function BadgePop(props){useEffect(function(){var t=setTimeout(props.onDone,3000);return function(){clearTimeout(t);};},[]);return h(“div”,{style:{position:“fixed”,bottom:80,left:“50%”,transform:“translateX(-50%)”,zIndex:900,pointerEvents:“none”,width:“85%”,maxWidth:380,animation:“badgePop 3s ease forwards”}},h(“div”,{className:“dq-win”,style:{padding:“12px 16px”,border:“3px solid #ffdd00”,textAlign:“center”}},h(“div”,{style:{fontSize:11,color:”#ffdd00”,marginBottom:4}},“★ バッジをてにいれた！”),h(“div”,{style:{fontSize:14,color:”#fff”}},props.badge.name),h(“div”,{style:{fontSize:11,color:”#aaa”,marginTop:2}},props.badge.desc)));}
+function LevelUpOverlay(props){useEffect(function(){var t=setTimeout(props.onDone,2800);return function(){clearTimeout(t);};},[]);return h("div",{style:{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}},h("div",{style:{animation:"flash 0.3s ease 2",background:"rgba(255,255,100,0.12)",position:"absolute",inset:0}}),h("div",{className:"dq-win",style:{padding:"20px 32px",textAlign:"center",animation:"levelup 2.8s ease forwards",border:"4px solid #ffdd00"}},h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:8}},"✦ ✦ ✦"),h("div",{style:{fontSize:18,color:"#ffdd00",lineHeight:1.8}},"レベルが あがった！",h("br"),h("span",{style:{fontSize:24,color:"#fff"}},"Lv."+props.level)),h("div",{style:{fontSize:13,color:"#ffdd00",marginTop:8}},"✦ ✦ ✦")));}
+function XPPop(props){useEffect(function(){var t=setTimeout(props.onDone,1400);return function(){clearTimeout(t);};},[]);return h("div",{style:{position:"fixed",top:"30%",left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",animation:"xpPop 1.4s ease forwards",fontSize:20,color:"#ffdd00",textShadow:"0 0 8px #ffdd00"}},"＋"+props.xp+"XP");}
+function BadgePop(props){useEffect(function(){var t=setTimeout(props.onDone,3000);return function(){clearTimeout(t);};},[]);return h("div",{style:{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",width:"85%",maxWidth:380,animation:"badgePop 3s ease forwards"}},h("div",{className:"dq-win",style:{padding:"12px 16px",border:"3px solid #ffdd00",textAlign:"center"}},h("div",{style:{fontSize:11,color:"#ffdd00",marginBottom:4}},"★ バッジをてにいれた！"),h("div",{style:{fontSize:14,color:"#fff"}},props.badge.name),h("div",{style:{fontSize:11,color:"#aaa",marginTop:2}},props.badge.desc)));}
 
 // ── camera ──
 function CameraModal(props){
-var videoRef=useRef(null),canvasRef=useRef(null),streamRef=useRef(null);
-var _s=useState(false);var streaming=_s[0];var setStreaming=_s[1];
-useEffect(function(){
-navigator.mediaDevices.getUserMedia({video:{facingMode:“environment”},audio:false})
-.then(function(stream){streamRef.current=stream;if(videoRef.current){videoRef.current.srcObject=stream;videoRef.current.play();}setStreaming(true);})
-.catch(function(e){alert(“カメラ起動失敗: “+e.message);props.onClose();});
-return function(){if(streamRef.current)streamRef.current.getTracks().forEach(function(t){t.stop();});};
-},[]);
-function shoot(){
-if(!canvasRef.current||!videoRef.current)return;
-var v=videoRef.current;canvasRef.current.width=v.videoWidth;canvasRef.current.height=v.videoHeight;
-canvasRef.current.getContext(“2d”).drawImage(v,0,0);
-var dataUrl=canvasRef.current.toDataURL(“image/jpeg”,0.5);
-if(streamRef.current)streamRef.current.getTracks().forEach(function(t){t.stop();});
-props.onPhoto(dataUrl);
-}
-return h(“div”,{style:{position:“fixed”,inset:0,zIndex:2000,background:”#000”,display:“flex”,flexDirection:“column”}},
-h(“div”,{style:{padding:“12px”,textAlign:“center”,color:”#ffdd00”,fontSize:14,background:”#000033”}},“★ トレーニングかいし ★”),
-h(“div”,{style:{fontSize:11,color:”#aaa”,textAlign:“center”,padding:“4px 0”}},“ジムの様子を撮影してください”),
-h(“video”,{ref:videoRef,autoPlay:true,playsInline:true,style:{flex:1,width:“100%”,objectFit:“cover”}}),
-h(“canvas”,{ref:canvasRef,style:{display:“none”}}),
-h(“div”,{style:{padding:“16px”,display:“flex”,gap:12,background:”#000033”}},
-h(“button”,{className:“dq-btn”,onClick:props.onClose,style:{flex:1,textAlign:“center”,padding:“12px”,color:”#ff4444”,border:“2px solid #ff4444”}},“▶ とじる”),
-streaming?h(“button”,{className:“dq-btn”,onClick:shoot,style:{flex:2,textAlign:“center”,padding:“12px”,color:”#ffdd00”,border:“3px solid #ffdd00”,fontSize:15}},“📷 さつえい！”):h(“div”,{style:{flex:2,textAlign:“center”,padding:“12px”,color:”#aaa”,fontSize:12}},“カメラ起動中…”)
-)
-);
+  var videoRef=useRef(null),canvasRef=useRef(null),streamRef=useRef(null);
+  var _s=useState(false);var streaming=_s[0];var setStreaming=_s[1];
+  useEffect(function(){
+    navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"},audio:false})
+      .then(function(stream){streamRef.current=stream;if(videoRef.current){videoRef.current.srcObject=stream;videoRef.current.play();}setStreaming(true);})
+      .catch(function(e){alert("カメラ起動失敗: "+e.message);props.onClose();});
+    return function(){if(streamRef.current)streamRef.current.getTracks().forEach(function(t){t.stop();});};
+  },[]);
+  function shoot(){
+    if(!canvasRef.current||!videoRef.current)return;
+    var v=videoRef.current;canvasRef.current.width=v.videoWidth;canvasRef.current.height=v.videoHeight;
+    canvasRef.current.getContext("2d").drawImage(v,0,0);
+    var dataUrl=canvasRef.current.toDataURL("image/jpeg",0.5);
+    if(streamRef.current)streamRef.current.getTracks().forEach(function(t){t.stop();});
+    props.onPhoto(dataUrl);
+  }
+  return h("div",{style:{position:"fixed",inset:0,zIndex:2000,background:"#000",display:"flex",flexDirection:"column"}},
+    h("div",{style:{padding:"12px",textAlign:"center",color:"#ffdd00",fontSize:14,background:"#000033"}},"★ トレーニングかいし ★"),
+    h("div",{style:{fontSize:11,color:"#aaa",textAlign:"center",padding:"4px 0"}},"ジムの様子を撮影してください"),
+    h("video",{ref:videoRef,autoPlay:true,playsInline:true,style:{flex:1,width:"100%",objectFit:"cover"}}),
+    h("canvas",{ref:canvasRef,style:{display:"none"}}),
+    h("div",{style:{padding:"16px",display:"flex",gap:12,background:"#000033"}},
+      h("button",{className:"dq-btn",onClick:props.onClose,style:{flex:1,textAlign:"center",padding:"12px",color:"#ff4444",border:"2px solid #ff4444"}},"▶ とじる"),
+      streaming?h("button",{className:"dq-btn",onClick:shoot,style:{flex:2,textAlign:"center",padding:"12px",color:"#ffdd00",border:"3px solid #ffdd00",fontSize:15}},"📷 さつえい！"):h("div",{style:{flex:2,textAlign:"center",padding:"12px",color:"#aaa",fontSize:12}},"カメラ起動中...")
+    )
+  );
 }
 
 // ── menu editor ──
 function MenuEditor(props){
-var menu=props.menu;
-var _n=useState(menu.name);var name=_n[0];var setName=_n[1];
-var _items=useState(menu.items.map(function(i){return Object.assign({},i);}));var items=_items[0];var setItems=_items[1];
+  var menu=props.menu;
+  var _n=useState(menu.name);var name=_n[0];var setName=_n[1];
+  var _items=useState(menu.items.map(function(i){return Object.assign({},i);}));var items=_items[0];var setItems=_items[1];
 
-function updateItem(idx,key,val){setItems(function(prev){var a=prev.map(function(x){return Object.assign({},x);});a[idx][key]=val;return a;});}
-function addItem(){setItems(function(prev){return prev.concat([{exercise:“ベンチプレス”,weight:60,reps:10,sets:3}]);});}
-function removeItem(idx){setItems(function(prev){return prev.filter(function(_,i){return i!==idx;});});}
-function save(){props.onSave({name:name,items:items});}
+  function updateItem(idx,key,val){setItems(function(prev){var a=prev.map(function(x){return Object.assign({},x);});a[idx][key]=val;return a;});}
+  function addItem(){setItems(function(prev){return prev.concat([{exercise:"ベンチプレス",weight:60,reps:10,sets:3}]);});}
+  function removeItem(idx){setItems(function(prev){return prev.filter(function(_,i){return i!==idx;});});}
+  function save(){props.onSave({name:name,items:items});}
 
-return h(“div”,{style:{position:“fixed”,inset:0,zIndex:3000,background:“rgba(0,0,0,0.9)”,overflowY:“auto”,padding:“12px”}},
-h(“div”,{className:“dq-win”,style:{padding:“12px”,maxWidth:430,margin:“0 auto”}},
-h(“div”,{style:{fontSize:14,color:”#ffdd00”,marginBottom:12}},“▼ メニューへんしゅう”),
-h(“div”,{style:{marginBottom:10}},
-h(“div”,{style:{fontSize:11,color:”#aaa”,marginBottom:4}},“メニュー名”),
-h(“input”,{className:“dq-input”,value:name,onChange:function(e){setName(e.target.value);},style:{width:“100%”,fontSize:14}})
-),
-items.map(function(item,idx){
-return h(“div”,{key:idx,className:“dq-win”,style:{padding:“8px”,marginBottom:8,borderColor:”#4444aa”}},
-h(“div”,{style:{display:“flex”,justifyContent:“space-between”,alignItems:“center”,marginBottom:6}},
-h(“div”,{style:{fontSize:11,color:”#aaa”}},“しゅもく “+(idx+1)),
-h(“button”,{className:“dq-btn”,onClick:function(){removeItem(idx);},style:{fontSize:11,padding:“2px 8px”,color:”#ff4444”,border:“1px solid #ff4444”}},“✕”)
-),
-h(“select”,{className:“dq-input”,value:item.exercise,onChange:function(e){updateItem(idx,“exercise”,e.target.value);},style:{width:“100%”,marginBottom:6,fontSize:12}},
-ALL_EXERCISES.map(function(e){return h(“option”,{key:e,value:e},e);})
-),
-h(“div”,{style:{display:“grid”,gridTemplateColumns:“1fr 1fr 1fr”,gap:6}},
-[[“じゅうりょう”,item.weight,“weight”,5,0],[“かいすう”,item.reps,“reps”,1,1],[“セット”,item.sets,“sets”,1,1]].map(function(f){
-return h(“div”,{key:f[0]},
-h(“div”,{style:{fontSize:9,color:”#aaa”,marginBottom:2,textAlign:“center”}},f[0]),
-h(“div”,{style:{display:“flex”,alignItems:“center”}},
-h(“button”,{className:“dq-btn”,onClick:function(){updateItem(idx,f[2],Math.max(f[4],f[1]-f[3]));},style:{width:26,textAlign:“center”,padding:“2px”,fontSize:12}},“◀”),
-h(“span”,{style:{flex:1,textAlign:“center”,fontSize:12,color:”#ffdd00”,background:”#000011”,padding:“3px 0”,border:“2px solid #4444aa”,borderLeft:“none”,borderRight:“none”}},f[1]),
-h(“button”,{className:“dq-btn”,onClick:function(){updateItem(idx,f[2],f[1]+f[3]);},style:{width:26,textAlign:“center”,padding:“2px”,fontSize:12}},“▶”)
-)
-);
-})
-)
-);
-}),
-items.length<10&&h(“button”,{className:“dq-btn”,onClick:addItem,style:{width:“100%”,textAlign:“center”,padding:“8px”,color:”#44ff44”,border:“2px solid #44ff44”,marginBottom:8,fontSize:12}},“▶ しゅもくをついか”),
-h(“div”,{style:{display:“flex”,gap:8,marginTop:4}},
-h(“button”,{className:“dq-btn”,onClick:props.onClose,style:{flex:1,textAlign:“center”,padding:“10px”,color:”#ff4444”,border:“2px solid #ff4444”,fontSize:13}},“▶ キャンセル”),
-h(“button”,{className:“dq-btn”,onClick:save,style:{flex:1,textAlign:“center”,padding:“10px”,color:”#ffdd00”,border:“2px solid #ffdd00”,fontSize:13}},“▶ ほぞん”)
-)
-)
-);
+  return h("div",{style:{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,0.9)",overflowY:"auto",padding:"12px"}},
+    h("div",{className:"dq-win",style:{padding:"12px",maxWidth:430,margin:"0 auto"}},
+      h("div",{style:{fontSize:14,color:"#ffdd00",marginBottom:12}},"▼ メニューへんしゅう"),
+      h("div",{style:{marginBottom:10}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"メニュー名"),
+        h("input",{className:"dq-input",value:name,onChange:function(e){setName(e.target.value);},style:{width:"100%",fontSize:14}})
+      ),
+      items.map(function(item,idx){
+        return h("div",{key:idx,className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#4444aa"}},
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
+            h("div",{style:{fontSize:11,color:"#aaa"}},"しゅもく "+(idx+1)),
+            h("button",{className:"dq-btn",onClick:function(){removeItem(idx);},style:{fontSize:11,padding:"2px 8px",color:"#ff4444",border:"1px solid #ff4444"}},"✕")
+          ),
+          h("select",{className:"dq-input",value:item.exercise,onChange:function(e){updateItem(idx,"exercise",e.target.value);},style:{width:"100%",marginBottom:6,fontSize:12}},
+            ALL_EXERCISES.map(function(e){return h("option",{key:e,value:e},e);})
+          ),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}},
+            [["じゅうりょう",item.weight,"weight",5,0],["かいすう",item.reps,"reps",1,1],["セット",item.sets,"sets",1,1]].map(function(f){
+              return h("div",{key:f[0]},
+                h("div",{style:{fontSize:9,color:"#aaa",marginBottom:2,textAlign:"center"}},f[0]),
+                h("div",{style:{display:"flex",alignItems:"center"}},
+                  h("button",{className:"dq-btn",onClick:function(){updateItem(idx,f[2],Math.max(f[4],f[1]-f[3]));},style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"◀"),
+                  h("span",{style:{flex:1,textAlign:"center",fontSize:12,color:"#ffdd00",background:"#000011",padding:"3px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},f[1]),
+                  h("button",{className:"dq-btn",onClick:function(){updateItem(idx,f[2],f[1]+f[3]);},style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"▶")
+                )
+              );
+            })
+          )
+        );
+      }),
+      items.length<10&&h("button",{className:"dq-btn",onClick:addItem,style:{width:"100%",textAlign:"center",padding:"8px",color:"#44ff44",border:"2px solid #44ff44",marginBottom:8,fontSize:12}},"▶ しゅもくをついか"),
+      h("div",{style:{display:"flex",gap:8,marginTop:4}},
+        h("button",{className:"dq-btn",onClick:props.onClose,style:{flex:1,textAlign:"center",padding:"10px",color:"#ff4444",border:"2px solid #ff4444",fontSize:13}},"▶ キャンセル"),
+        h("button",{className:"dq-btn",onClick:save,style:{flex:1,textAlign:"center",padding:"10px",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13}},"▶ ほぞん")
+      )
+    )
+  );
 }
 
 // ── main ──
 var INIT={totalXP:0,partXP:{},exercises:{},sessions:[],badges:[],totalSessions:0,maxStreak:0,level:1,totalProtein:0,nightRecord:false,morningRecord:false,noonRecord:false,prCount:0,totalSets:0,maxWeight:0,maxDailySessions:0,totalCheckIns:0,workoutLog:[],menuRecords:0};
 
 function App(){
-var _d=useState(function(){try{return JSON.parse(localStorage.getItem(SK)||“null”)||INIT;}catch(e){return INIT;}});
-var data=_d[0];var setData=_d[1];
-var _uid=useState(function(){return window.GQ?window.GQ.getOrCreateUserId():””;});
-var uid=_uid[0];
-var _showSearch=useState(false);var showSearch=_showSearch[0];var setShowSearch=_showSearch[1];
-var _searchId=useState(””);var searchId=_searchId[0];var setSearchId=_searchId[1];
-var _searchResult=useState(null);var searchResult=_searchResult[0];var setSearchResult=_searchResult[1];
-var _searching=useState(false);var searching=_searching[0];var setSearching=_searching[1];
-var _pt=useState(“胸”);var part=_pt[0];var setPart=_pt[1];
-var _ex=useState(PRESETS[“胸”][0]);var exercise=_ex[0];var setExercise=_ex[1];
-var _wt=useState(60);var weight=_wt[0];var setWeight=_wt[1];
-var _rp=useState(10);var reps=_rp[0];var setReps=_rp[1];
-var _st=useState(3);var sets=_st[0];var setSets=_st[1];
-var _pr=useState(1);var protein=_pr[0];var setProtein=_pr[1];
-var _rl=useState([]);var recentLog=_rl[0];var setRecentLog=_rl[1];
-var _la=useState(null);var lvAnim=_la[0];var setLvAnim=_la[1];
-var _xa=useState(null);var xpAnim=_xa[0];var setXpAnim=_xa[1];
-var _ba=useState(null);var badgeAnim=_ba[0];var setBadgeAnim=_ba[1];
-var _sr=useState(false);var showReset=_sr[0];var setShowReset=_sr[1];
-var _cam=useState(false);var showCamera=_cam[0];var setShowCamera=_cam[1];
-var _logMode=useState(“single”);var logMode=_logMode[0];var setLogMode=_logMode[1]; // “single” | “menu”
-var _selMenu=useState(0);var selMenu=_selMenu[0];var setSelMenu=_selMenu[1];
-var _editMenu=useState(null);var editMenu=_editMenu[0];var setEditMenu=_editMenu[1]; // index or null
-// チェックイン（localStorage永続化）
-var _ci=useState(function(){try{var c=JSON.parse(localStorage.getItem(CK)||“null”);return c&&(Date.now()-c.startTime<VALID_MS)?c:null;}catch(e){return null;}});
-var checkIn=_ci[0];var setCheckIn=_ci[1];
-var _rem=useState(null);var remaining=_rem[0];var setRemaining=_rem[1];
-// メニュー
-var _menus=useState(function(){try{return JSON.parse(localStorage.getItem(MK)||“null”)||DEFAULT_MENUS;}catch(e){return DEFAULT_MENUS;}});
-var menus=_menus[0];var setMenus=_menus[1];
+  var _d=useState(function(){try{return JSON.parse(localStorage.getItem(SK)||"null")||INIT;}catch(e){return INIT;}});
+  var data=_d[0];var setData=_d[1];
+  var _uid=useState(function(){return window.GQ?window.GQ.getOrCreateUserId():"";});
+  var uid=_uid[0];
+  var _showSearch=useState(false);var showSearch=_showSearch[0];var setShowSearch=_showSearch[1];
+  var _searchId=useState("");var searchId=_searchId[0];var setSearchId=_searchId[1];
+  var _searchResult=useState(null);var searchResult=_searchResult[0];var setSearchResult=_searchResult[1];
+  var _searching=useState(false);var searching=_searching[0];var setSearching=_searching[1];
+  var _pt=useState("胸");var part=_pt[0];var setPart=_pt[1];
+  var _ex=useState(PRESETS["胸"][0]);var exercise=_ex[0];var setExercise=_ex[1];
+  var _wt=useState(60);var weight=_wt[0];var setWeight=_wt[1];
+  var _rp=useState(10);var reps=_rp[0];var setReps=_rp[1];
+  var _st=useState(3);var sets=_st[0];var setSets=_st[1];
+  var _pr=useState(1);var protein=_pr[0];var setProtein=_pr[1];
+  var _rl=useState([]);var recentLog=_rl[0];var setRecentLog=_rl[1];
+  var _la=useState(null);var lvAnim=_la[0];var setLvAnim=_la[1];
+  var _xa=useState(null);var xpAnim=_xa[0];var setXpAnim=_xa[1];
+  var _ba=useState(null);var badgeAnim=_ba[0];var setBadgeAnim=_ba[1];
+  var _sr=useState(false);var showReset=_sr[0];var setShowReset=_sr[1];
+  var _cam=useState(false);var showCamera=_cam[0];var setShowCamera=_cam[1];
+  var _logMode=useState("single");var logMode=_logMode[0];var setLogMode=_logMode[1]; // "single" | "menu"
+  var _selMenu=useState(0);var selMenu=_selMenu[0];var setSelMenu=_selMenu[1];
+  var _editMenu=useState(null);var editMenu=_editMenu[0];var setEditMenu=_editMenu[1]; // index or null
+  // チェックイン（localStorage永続化）
+  var _ci=useState(function(){try{var c=JSON.parse(localStorage.getItem(CK)||"null");return c&&(Date.now()-c.startTime<VALID_MS)?c:null;}catch(e){return null;}});
+  var checkIn=_ci[0];var setCheckIn=_ci[1];
+  var _rem=useState(null);var remaining=_rem[0];var setRemaining=_rem[1];
+  // メニュー
+  var _menus=useState(function(){try{return JSON.parse(localStorage.getItem(MK)||"null")||DEFAULT_MENUS;}catch(e){return DEFAULT_MENUS;}});
+  var menus=_menus[0];var setMenus=_menus[1];
 
-var badgeQueue=useRef([]);
-var timerRef=useRef(null);
+  var badgeQueue=useRef([]);
+  var timerRef=useRef(null);
 
-// タイマー
-useEffect(function(){
-if(!checkIn){setRemaining(null);return;}
-function tick(){var left=checkIn.startTime+VALID_MS-Date.now();if(left<=0){setCheckIn(null);localStorage.removeItem(CK);setRemaining(null);return;}setRemaining(left);}
-tick();timerRef.current=setInterval(tick,1000);
-return function(){clearInterval(timerRef.current);};
-},[checkIn]);
+  // タイマー
+  useEffect(function(){
+    if(!checkIn){setRemaining(null);return;}
+    function tick(){var left=checkIn.startTime+VALID_MS-Date.now();if(left<=0){setCheckIn(null);localStorage.removeItem(CK);setRemaining(null);return;}setRemaining(left);}
+    tick();timerRef.current=setInterval(tick,1000);
+    return function(){clearInterval(timerRef.current);};
+  },[checkIn]);
 
-var isActive=!!(checkIn&&(Date.now()-checkIn.startTime<VALID_MS));
+  var isActive=!!(checkIn&&(Date.now()-checkIn.startTime<VALID_MS));
 
-useEffect(function(){var e=PRESETS[part][0];setExercise(e);setWeight((data.exercises[e]&&data.exercises[e].maxWeight)||60);},[part]);
-useEffect(function(){setWeight((data.exercises[exercise]&&data.exercises[exercise].maxWeight)||60);},[exercise]);
+  useEffect(function(){var e=PRESETS[part][0];setExercise(e);setWeight((data.exercises[e]&&data.exercises[e].maxWeight)||60);},[part]);
+  useEffect(function(){setWeight((data.exercises[exercise]&&data.exercises[exercise].maxWeight)||60);},[exercise]);
 
-var save=useCallback(function(d){
-setData(d);
-try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){}
-if(window.GQ&&uid) window.GQ.syncToFirebase(uid,d);
-},[uid]);
-var saveMenus=useCallback(function(m){setMenus(m);try{localStorage.setItem(MK,JSON.stringify(m));}catch(e){};},[]);
-var popNextBadge=useCallback(function(){if(badgeQueue.current.length>0)setBadgeAnim(badgeQueue.current.shift());},[]);
+  var save=useCallback(function(d){
+    setData(d);
+    try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){}
+    if(window.GQ&&uid) window.GQ.syncToFirebase(uid,d);
+  },[uid]);
+  var saveMenus=useCallback(function(m){setMenus(m);try{localStorage.setItem(MK,JSON.stringify(m));}catch(e){};},[]);
+  var popNextBadge=useCallback(function(){if(badgeQueue.current.length>0)setBadgeAnim(badgeQueue.current.shift());},[]);
 
-function applyXPAndSave(d0,xpList){
-// xpList: [{exercise,part,weight,reps,sets}]
-var today=getToday();var hour=getHour();
-var d=Object.assign({},d0);
-var ns=d.sessions.slice();
-var totalXP=d.totalXP;var partXP=Object.assign({},d.partXP);var exercises=Object.assign({},d.exercises);
-var totalSets=d.totalSets||0;var maxWeight=d.maxWeight||0;var prCount=d.prCount||0;
-var allXP=0;var logItems=[];
-xpList.forEach(function(item){
-var isNew=!exercises[item.exercise];
-var prevMax=(exercises[item.exercise]&&exercises[item.exercise].maxWeight)||0;
-var isPR=item.weight>prevMax&&!isNew;
-var xp=item.sets*5;var xl=[item.sets+“x5 +”+item.sets*5+“XP”];
-if(isNew){xp+=20;xl.push(“しんしゅもく +20XP”);}
-if(isPR){xp+=30;xl.push(“じこベスト +30XP”);}
-ns.push(today);
-var streak=getStreak(ns);
-if(streak>=3&&streak>getStreak(d.sessions)){xp+=50;xl.push(“れんぞく +50XP”);}
-totalXP+=xp;allXP+=xp;
-partXP[item.part]=(partXP[item.part]||0)+(item.sets*5);
-exercises[item.exercise]={maxWeight:Math.max(item.weight,prevMax),count:((exercises[item.exercise]&&exercises[item.exercise].count)||0)+1,part:item.part};
-totalSets+=item.sets;maxWeight=Math.max(maxWeight,item.weight);
-if(isPR)prCount++;
-logItems.push({exercise:item.exercise,part:item.part,weight:item.weight,reps:item.reps,sets:item.sets,xp:xp,xl:xl});
-});
-var uniqNS=[…new Set(ns)];var tds=ns.filter(function(x){return x===today;}).length;
-var streak=getStreak(ns);
-var lv=levelInfo(totalXP).level;
-var wl=(d.workoutLog||[]).slice();
-wl.unshift({date:today,time:new Date().toLocaleTimeString(“ja-JP”,{hour:“2-digit”,minute:“2-digit”}),photo:checkIn?checkIn.photo:null,items:logItems,xp:allXP});
-if(wl.length>20)wl=wl.slice(0,20);
-d=Object.assign({},d,{totalXP:totalXP,partXP:partXP,exercises:exercises,sessions:ns,
-totalSessions:(d.totalSessions||0)+xpList.length,maxStreak:Math.max(d.maxStreak||0,streak),
-level:lv,prCount:prCount,totalSets:totalSets,maxWeight:maxWeight,
-maxDailySessions:Math.max(d.maxDailySessions||0,tds),workoutLog:wl,
-nightRecord:d.nightRecord||(hour>=0&&hour<5),morningRecord:d.morningRecord||(hour>=5&&hour<7),noonRecord:d.noonRecord||(hour>=12&&hour<13)});
-return{d:d,allXP:allXP,prevLevel:levelInfo(d0.totalXP).level,newLevel:lv,logItems:logItems};
-}
+  function applyXPAndSave(d0,xpList){
+    // xpList: [{exercise,part,weight,reps,sets}]
+    var today=getToday();var hour=getHour();
+    var d=Object.assign({},d0);
+    var ns=d.sessions.slice();
+    var totalXP=d.totalXP;var partXP=Object.assign({},d.partXP);var exercises=Object.assign({},d.exercises);
+    var totalSets=d.totalSets||0;var maxWeight=d.maxWeight||0;var prCount=d.prCount||0;
+    var allXP=0;var logItems=[];
+    xpList.forEach(function(item){
+      var isNew=!exercises[item.exercise];
+      var prevMax=(exercises[item.exercise]&&exercises[item.exercise].maxWeight)||0;
+      var isPR=item.weight>prevMax&&!isNew;
+      var xp=item.sets*5;var xl=[item.sets+"x5 +"+item.sets*5+"XP"];
+      if(isNew){xp+=20;xl.push("しんしゅもく +20XP");}
+      if(isPR){xp+=30;xl.push("じこベスト +30XP");}
+      ns.push(today);
+      var streak=getStreak(ns);
+      if(streak>=3&&streak>getStreak(d.sessions)){xp+=50;xl.push("れんぞく +50XP");}
+      totalXP+=xp;allXP+=xp;
+      partXP[item.part]=(partXP[item.part]||0)+(item.sets*5);
+      exercises[item.exercise]={maxWeight:Math.max(item.weight,prevMax),count:((exercises[item.exercise]&&exercises[item.exercise].count)||0)+1,part:item.part};
+      totalSets+=item.sets;maxWeight=Math.max(maxWeight,item.weight);
+      if(isPR)prCount++;
+      logItems.push({exercise:item.exercise,part:item.part,weight:item.weight,reps:item.reps,sets:item.sets,xp:xp,xl:xl});
+    });
+    var uniqNS=[...new Set(ns)];var tds=ns.filter(function(x){return x===today;}).length;
+    var streak=getStreak(ns);
+    var lv=levelInfo(totalXP).level;
+    var wl=(d.workoutLog||[]).slice();
+    wl.unshift({date:today,time:new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"}),photo:checkIn?checkIn.photo:null,items:logItems,xp:allXP});
+    if(wl.length>20)wl=wl.slice(0,20);
+    d=Object.assign({},d,{totalXP:totalXP,partXP:partXP,exercises:exercises,sessions:ns,
+      totalSessions:(d.totalSessions||0)+xpList.length,maxStreak:Math.max(d.maxStreak||0,streak),
+      level:lv,prCount:prCount,totalSets:totalSets,maxWeight:maxWeight,
+      maxDailySessions:Math.max(d.maxDailySessions||0,tds),workoutLog:wl,
+      nightRecord:d.nightRecord||(hour>=0&&hour<5),morningRecord:d.morningRecord||(hour>=5&&hour<7),noonRecord:d.noonRecord||(hour>=12&&hour<13)});
+    return{d:d,allXP:allXP,prevLevel:levelInfo(d0.totalXP).level,newLevel:lv,logItems:logItems};
+  }
 
-function handleRecord(){
-if(!isActive){alert(“トレーニングを開始してください！”);return;}
-var result=applyXPAndSave(data,[{exercise:exercise,part:part,weight:weight,reps:reps,sets:sets}]);
-result.d.badges=(data.badges||[]).slice();var nb=[];
-BADGES.forEach(function(b){if(!result.d.badges.includes(b.id)&&b.cond(result.d)){result.d.badges.push(b.id);nb.push(b);}});
-save(result.d);
-setRecentLog(function(prev){return result.logItems.concat(prev).slice(0,10);});
-setXpAnim(result.allXP);
-if(result.newLevel>result.prevLevel)setTimeout(function(){setLvAnim(result.newLevel);},800);
-if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
-}
+  function handleRecord(){
+    if(!isActive){alert("トレーニングを開始してください！");return;}
+    var result=applyXPAndSave(data,[{exercise:exercise,part:part,weight:weight,reps:reps,sets:sets}]);
+    result.d.badges=(data.badges||[]).slice();var nb=[];
+    BADGES.forEach(function(b){if(!result.d.badges.includes(b.id)&&b.cond(result.d)){result.d.badges.push(b.id);nb.push(b);}});
+    save(result.d);
+    setRecentLog(function(prev){return result.logItems.concat(prev).slice(0,10);});
+    setXpAnim(result.allXP);
+    if(result.newLevel>result.prevLevel)setTimeout(function(){setLvAnim(result.newLevel);},800);
+    if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
+  }
 
-function handleMenuRecord(){
-if(!isActive){alert(“トレーニングを開始してください！”);return;}
-var menu=menus[selMenu];
-var xpList=menu.items.map(function(item){return{exercise:item.exercise,part:getPartForExercise(item.exercise),weight:item.weight,reps:item.reps,sets:item.sets};});
-var result=applyXPAndSave(data,xpList);
-result.d.menuRecords=(data.menuRecords||0)+1;
-result.d.badges=(data.badges||[]).slice();var nb=[];
-BADGES.forEach(function(b){if(!result.d.badges.includes(b.id)&&b.cond(result.d)){result.d.badges.push(b.id);nb.push(b);}});
-save(result.d);
-setRecentLog(function(prev){return result.logItems.concat(prev).slice(0,10);});
-setXpAnim(result.allXP);
-if(result.newLevel>result.prevLevel)setTimeout(function(){setLvAnim(result.newLevel);},800);
-if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
-}
+  function handleMenuRecord(){
+    if(!isActive){alert("トレーニングを開始してください！");return;}
+    var menu=menus[selMenu];
+    var xpList=menu.items.map(function(item){return{exercise:item.exercise,part:getPartForExercise(item.exercise),weight:item.weight,reps:item.reps,sets:item.sets};});
+    var result=applyXPAndSave(data,xpList);
+    result.d.menuRecords=(data.menuRecords||0)+1;
+    result.d.badges=(data.badges||[]).slice();var nb=[];
+    BADGES.forEach(function(b){if(!result.d.badges.includes(b.id)&&b.cond(result.d)){result.d.badges.push(b.id);nb.push(b);}});
+    save(result.d);
+    setRecentLog(function(prev){return result.logItems.concat(prev).slice(0,10);});
+    setXpAnim(result.allXP);
+    if(result.newLevel>result.prevLevel)setTimeout(function(){setLvAnim(result.newLevel);},800);
+    if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
+  }
 
-function handleProtein1(){
-var xp=10;var np=Object.assign({},data.partXP);PARTS.forEach(function(p){np[p]=(np[p]||0)+2;});
-var ntxp=data.totalXP+xp;var lv=levelInfo(ntxp).level;
-var d=Object.assign({},data,{totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+1});
-d.badges=(data.badges||[]).slice();var nb=[];
-BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
-save(d);setXpAnim(xp);
-if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
-}
-function handleProtein(){
-var xp=protein*10;var np=Object.assign({},data.partXP);PARTS.forEach(function(p){np[p]=(np[p]||0)+protein*2;});
-var ntxp=data.totalXP+xp;var lv=levelInfo(ntxp).level;
-var d=Object.assign({},data,{totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+protein});
-d.badges=(data.badges||[]).slice();var nb=[];
-BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
-save(d);setXpAnim(xp);
-if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
-}
+  function handleProtein1(){
+    var xp=10;var np=Object.assign({},data.partXP);PARTS.forEach(function(p){np[p]=(np[p]||0)+2;});
+    var ntxp=data.totalXP+xp;var lv=levelInfo(ntxp).level;
+    var d=Object.assign({},data,{totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+1});
+    d.badges=(data.badges||[]).slice();var nb=[];
+    BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
+    save(d);setXpAnim(xp);
+    if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
+  }
+  function handleProtein(){
+    var xp=protein*10;var np=Object.assign({},data.partXP);PARTS.forEach(function(p){np[p]=(np[p]||0)+protein*2;});
+    var ntxp=data.totalXP+xp;var lv=levelInfo(ntxp).level;
+    var d=Object.assign({},data,{totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+protein});
+    d.badges=(data.badges||[]).slice();var nb=[];
+    BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
+    save(d);setXpAnim(xp);
+    if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
+  }
 
-function onPhoto(dataUrl){
-setShowCamera(false);
-var ci={photo:dataUrl,startTime:Date.now()};
-setCheckIn(ci);
-try{localStorage.setItem(CK,JSON.stringify(ci));}catch(e){}
-var d=Object.assign({},data,{totalCheckIns:(data.totalCheckIns||0)+1});
-d.badges=(data.badges||[]).slice();var nb=[];
-BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
-save(d);
-if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
-}
+  function onPhoto(dataUrl){
+    setShowCamera(false);
+    var ci={photo:dataUrl,startTime:Date.now()};
+    setCheckIn(ci);
+    try{localStorage.setItem(CK,JSON.stringify(ci));}catch(e){}
+    var d=Object.assign({},data,{totalCheckIns:(data.totalCheckIns||0)+1});
+    d.badges=(data.badges||[]).slice();var nb=[];
+    BADGES.forEach(function(b){if(!d.badges.includes(b.id)&&b.cond(d)){d.badges.push(b.id);nb.push(b);}});
+    save(d);
+    if(nb.length>0){badgeQueue.current=badgeQueue.current.concat(nb);if(!badgeAnim)popNextBadge();}
+  }
 
-function handleReset(){save(INIT);setRecentLog([]);setCheckIn(null);localStorage.removeItem(CK);setShowReset(false);}
+  function handleReset(){save(INIT);setRecentLog([]);setCheckIn(null);localStorage.removeItem(CK);setShowReset(false);}
 
-var li=levelInfo(data.totalXP||0);
-var level=li.level,current=li.current,needed=li.needed;
-var stage=getStage(level);
-var earnedCount=(data.badges||[]).length;
-function ts(t){return{flex:1,padding:“9px 0”,border:“none”,cursor:“pointer”,fontSize:12,fontFamily:”‘DotGothic16’,monospace”,background:tab===t?“rgba(92,184,122,0.18)”:“rgba(255,255,255,0.05)”,color:tab===t?”#5cb87a”:”#aaa”,boxShadow:tab===t?“inset 0 2px 4px rgba(0,0,0,0.3)”:“inset 0 1px 3px rgba(0,0,0,0.2)”,transition:“all 0.15s”};}
+  var li=levelInfo(data.totalXP||0);
+  var level=li.level,current=li.current,needed=li.needed;
+  var stage=getStage(level);
+  var earnedCount=(data.badges||[]).length;
+  function ts(t){return{flex:1,padding:"9px 0",border:"none",cursor:"pointer",fontSize:12,fontFamily:"'DotGothic16',monospace",background:tab===t?"rgba(92,184,122,0.18)":"rgba(255,255,255,0.05)",color:tab===t?"#5cb87a":"#aaa",boxShadow:tab===t?"inset 0 2px 4px rgba(0,0,0,0.3)":"inset 0 1px 3px rgba(0,0,0,0.2)",transition:"all 0.15s"};}
 
-return h(“div”,{style:{maxWidth:430,margin:“0 auto”,padding:“10px 12px”,background:”#0a0a1a”,minHeight:“100vh”}},
-showCamera?h(CameraModal,{onPhoto:onPhoto,onClose:function(){setShowCamera(false);}}):null,
-editMenu!==null?h(MenuEditor,{menu:menus[editMenu],onSave:function(m){var nm=menus.map(function(x,i){return i===editMenu?m:x;});saveMenus(nm);setEditMenu(null);},onClose:function(){setEditMenu(null);}}):null,
-xpAnim?h(XPPop,{xp:xpAnim,onDone:function(){setXpAnim(null);}}):null,
-lvAnim?h(LevelUpOverlay,{level:lvAnim,onDone:function(){setLvAnim(null);}}):null,
-badgeAnim?h(BadgePop,{badge:badgeAnim,onDone:function(){setBadgeAnim(null);setTimeout(popNextBadge,400);}}):null,
+  return h("div",{style:{maxWidth:430,margin:"0 auto",padding:"10px 12px",background:"#0a0a1a",minHeight:"100vh"}},
+    showCamera?h(CameraModal,{onPhoto:onPhoto,onClose:function(){setShowCamera(false);}}):null,
+    editMenu!==null?h(MenuEditor,{menu:menus[editMenu],onSave:function(m){var nm=menus.map(function(x,i){return i===editMenu?m:x;});saveMenus(nm);setEditMenu(null);},onClose:function(){setEditMenu(null);}}):null,
+    xpAnim?h(XPPop,{xp:xpAnim,onDone:function(){setXpAnim(null);}}):null,
+    lvAnim?h(LevelUpOverlay,{level:lvAnim,onDone:function(){setLvAnim(null);}}):null,
+    badgeAnim?h(BadgePop,{badge:badgeAnim,onDone:function(){setBadgeAnim(null);setTimeout(popNextBadge,400);}}):null,
 
-```
-// タイトル
-h("div",{style:{textAlign:"center",marginBottom:8}},
-  h("div",{style:{fontSize:20,color:"#ffdd00",letterSpacing:2}},"★ GORILLA QUEST ★"),
-  h("div",{style:{fontSize:11,color:"#aaa"}},STAGE_LABELS[stage]),
-  h("div",{style:{marginTop:6,display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
-    h("div",{style:{fontSize:10,color:"#4488ff",background:"#000033",border:"1px solid #4444aa",padding:"3px 10px",letterSpacing:1}},"ID: "+uid),
-    h("button",{className:"dq-btn",onClick:function(){setShowSearch(!showSearch);setSearchResult(null);setSearchId("");},style:{fontSize:10,padding:"3px 8px",color:"#ffdd00",border:"1px solid #ffdd00"}},"🔍 けんさく")
-  ),
-  showSearch?h("div",{className:"dq-win",style:{margin:"6px 0",padding:"10px 12px",textAlign:"left"}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ユーザーIDをにゅうりょく"),
-    h("div",{style:{display:"flex",gap:6,marginBottom:8}},
-      h("input",{className:"dq-input",value:searchId,onChange:function(e){setSearchId(e.target.value.toUpperCase());},placeholder:"GQ-XXXXXX",style:{flex:1,fontSize:13}}),
-      h("button",{className:"dq-btn",onClick:async function(){
-        if(!searchId.trim())return;
-        setSearching(true);setSearchResult(null);
-        var r=await window.GQ.searchUser(searchId.trim());
-        setSearchResult(r||"notfound");
-        setSearching(false);
-      },style:{padding:"6px 12px",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:12}},searching?"…":"けんさく")
-    ),
-    searchResult&&searchResult!=="notfound"?h("div",null,
-      h("div",{style:{fontSize:12,color:"#44ff44",marginBottom:6}},"★ "+searchId+" のステータス"),
-      h("div",{style:{fontSize:12,color:"#fff",marginBottom:2}},"レベル: "+searchResult.level+" / そうXP: "+searchResult.totalXP),
-      h("div",{style:{fontSize:12,color:"#fff",marginBottom:2}},"さいちょうれんぞく: "+searchResult.maxStreak+"にち"),
-      h("div",{style:{fontSize:12,color:"#fff",marginBottom:6}},"さいきんのトレーニング: "+searchResult.lastTraining),
-      h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"ぶいべつレベル"),
-      PARTS.map(function(p){
-        var pi=partLevelInfo((searchResult.partXP||{})[p]||0);
-        return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:4,marginBottom:3}},
-          h("span",{style:{fontSize:10,color:PART_COLOR[p],width:20}},p),
-          h("div",{style:{flex:1,height:8,background:"#001100",border:"1px solid #336633",overflow:"hidden"}},
-            h("div",{style:{height:"100%",width:Math.min(Math.round((pi.current/pi.needed)*100),100)+"%",background:PART_COLOR[p]}})
-          ),
-          h("span",{style:{fontSize:10,color:"#aaa"}},"L"+pi.level)
-        );
-      })
-    ):null,
-    searchResult==="notfound"?h("div",{style:{fontSize:12,color:"#ff4444"}},"みつかりませんでした"):null
-  ):null
-),
-
-// アバター
-h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-  h("div",{style:{display:"flex",gap:12,alignItems:"flex-start"}},
-    h("div",{style:{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",width:90,height:90}},
-      h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],style:{width:180,height:180,objectFit:"contain",objectPosition:"center",imageRendering:"pixelated"},onError:function(e){e.target.style.display="none";}})
-    ),
-    h("div",{style:{flex:1,minWidth:0}},
-      h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}},
-        h("div",{style:{fontSize:13,color:"#ffdd00"}},"ゴリラ  LV"+level),
-        h("button",{onClick:handleProtein1,title:"プロテイン1杯",style:{background:"none",border:"none",cursor:"pointer",fontSize:22,lineHeight:1,padding:"0 2px"}},"🥤")
+    // タイトル
+    h("div",{style:{textAlign:"center",marginBottom:8}},
+      h("div",{style:{fontSize:20,color:"#ffdd00",letterSpacing:2}},"★ GORILLA QUEST ★"),
+      h("div",{style:{fontSize:11,color:"#aaa"}},STAGE_LABELS[stage]),
+      h("div",{style:{marginTop:6,display:"flex",alignItems:"center",justifyContent:"center",gap:6}},
+        h("div",{style:{fontSize:10,color:"#4488ff",background:"#000033",border:"1px solid #4444aa",padding:"3px 10px",letterSpacing:1}},"ID: "+uid),
+        h("button",{className:"dq-btn",onClick:function(){setShowSearch(!showSearch);setSearchResult(null);setSearchId("");},style:{fontSize:10,padding:"3px 8px",color:"#ffdd00",border:"1px solid #ffdd00"}},"🔍 けんさく")
       ),
-      h(DQBar,{value:current,max:needed,color:"#44ff44"}),
-      h("div",{style:{fontSize:10,color:"#aaa",marginTop:1,marginBottom:6}},current+"/"+needed+" XP"),
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 4px"}},
-        PARTS.map(function(p){var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:2,minWidth:0}},h("span",{style:{fontSize:9,color:PART_COLOR[p],width:18,flexShrink:0}},p),h("div",{style:{flex:1,height:10,background:"#001100",border:"1px solid #336633",minWidth:0,overflow:"hidden"}},h("div",{style:{height:"100%",width:Math.min(Math.round((pi.current/pi.needed)*100),100)+"%",background:PART_COLOR[p],transition:"width 0.4s"}})),h("span",{style:{fontSize:9,color:"#aaa",width:18,flexShrink:0,textAlign:"right"}},"L"+pi.level));})
-      )
-    )
-  )
-),
-
-// チェックインバー
-isActive?
-  h("div",{className:"dq-win",style:{padding:"8px 12px",marginBottom:8,border:"3px solid #44ff44",display:"flex",alignItems:"center",gap:8}},
-    checkIn&&checkIn.photo?h("img",{src:checkIn.photo,style:{width:44,height:44,objectFit:"cover",border:"2px solid #44ff44",flexShrink:0}}):null,
-    h("div",{style:{flex:1}},
-      h("div",{style:{fontSize:11,color:"#44ff44",animation:"pulse 1s infinite"}},"★ トレーニング中！"),
-      h("div",{style:{fontSize:11,color:"#aaa",marginTop:2}},"のこり "+fmtTime(remaining||0))
+      showSearch?h("div",{className:"dq-win",style:{margin:"6px 0",padding:"10px 12px",textAlign:"left"}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ユーザーIDをにゅうりょく"),
+        h("div",{style:{display:"flex",gap:6,marginBottom:8}},
+          h("input",{className:"dq-input",value:searchId,onChange:function(e){setSearchId(e.target.value.toUpperCase());},placeholder:"GQ-XXXXXX",style:{flex:1,fontSize:13}}),
+          h("button",{className:"dq-btn",onClick:async function(){
+            if(!searchId.trim())return;
+            setSearching(true);setSearchResult(null);
+            var r=await window.GQ.searchUser(searchId.trim());
+            setSearchResult(r||"notfound");
+            setSearching(false);
+          },style:{padding:"6px 12px",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:12}},searching?"…":"けんさく")
+        ),
+        searchResult&&searchResult!=="notfound"?h("div",null,
+          h("div",{style:{fontSize:12,color:"#44ff44",marginBottom:6}},"★ "+searchId+" のステータス"),
+          h("div",{style:{fontSize:12,color:"#fff",marginBottom:2}},"レベル: "+searchResult.level+" / そうXP: "+searchResult.totalXP),
+          h("div",{style:{fontSize:12,color:"#fff",marginBottom:2}},"さいちょうれんぞく: "+searchResult.maxStreak+"にち"),
+          h("div",{style:{fontSize:12,color:"#fff",marginBottom:6}},"さいきんのトレーニング: "+searchResult.lastTraining),
+          h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"ぶいべつレベル"),
+          PARTS.map(function(p){
+            var pi=partLevelInfo((searchResult.partXP||{})[p]||0);
+            return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:4,marginBottom:3}},
+              h("span",{style:{fontSize:10,color:PART_COLOR[p],width:20}},p),
+              h("div",{style:{flex:1,height:8,background:"#001100",border:"1px solid #336633",overflow:"hidden"}},
+                h("div",{style:{height:"100%",width:Math.min(Math.round((pi.current/pi.needed)*100),100)+"%",background:PART_COLOR[p]}})
+              ),
+              h("span",{style:{fontSize:10,color:"#aaa"}},"L"+pi.level)
+            );
+          })
+        ):null,
+        searchResult==="notfound"?h("div",{style:{fontSize:12,color:"#ff4444"}},"みつかりませんでした"):null
+      ):null
     ),
-    h("button",{className:"dq-btn",onClick:function(){setShowCamera(true);},style:{fontSize:10,padding:"5px 6px",color:"#ffdd00",border:"2px solid #ffdd00",whiteSpace:"nowrap"}},"再撮影")
-  ):
-  h("button",{className:"dq-btn",onClick:function(){setShowCamera(true);},style:{width:"100%",textAlign:"center",fontSize:14,padding:"13px",border:"3px solid #44ff44",color:"#44ff44",marginBottom:8}},"📷 ▶ トレーニングかいし！"),
 
-// タブ
-h("div",{style:{display:"flex",gap:2,marginBottom:8,background:"rgba(0,0,0,0.3)"}},
-  [["log","▶ きろく"],["history","▶ れきし"],["badge","▶ バッジ"]].map(function(item){return h("button",{key:item[0],style:ts(item[0]),onClick:function(){setTab(item[0]);}},item[1]);})
-),
-
-// ── LOG tab ──
-tab==="log"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-  !isActive?h("div",{style:{padding:"10px",textAlign:"center",color:"#ff4444",fontSize:11,background:"#110000",border:"2px solid #ff4444"}},"トレーニングを開始してから記録できます"):null,
-
-  // モード切替
-  h("div",{style:{display:"flex",gap:4,marginBottom:2}},
-    h("button",{className:"dq-btn "+(logMode==="single"?"active":""),onClick:function(){setLogMode("single");},style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ たんどくきろく"),
-    h("button",{className:"dq-btn "+(logMode==="menu"?"active":""),onClick:function(){setLogMode("menu");},style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ メニューきろく")
-  ),
-
-  // 単独記録
-  logMode==="single"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-    h("div",{className:"dq-win",style:{padding:"10px 12px"}},
-      h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ぶいをえらぶ"),
-      h("div",{style:{display:"flex",gap:3,marginBottom:12}},PARTS.map(function(p){return h("button",{key:p,className:"dq-btn "+(part===p?"active":""),onClick:function(){setPart(p);},style:{flex:1,fontSize:11,padding:"5px 2px",textAlign:"center",color:part===p?PART_COLOR[p]:"#aaa",borderBottom:part===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);})),
-      h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ しゅもくをえらぶ"),
-      h("select",{className:"dq-input",value:exercise,onChange:function(e){setExercise(e.target.value);},style:{width:"100%",fontSize:13,marginBottom:12}},PRESETS[part].map(function(e){return h("option",{key:e,value:e},e);})),
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
-        [["じゅうりょう","kg",weight,setWeight,5,0],["かいすう","かい",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(function(f){return h("div",{key:f[0]},h("div",{style:{fontSize:10,color:"#aaa",marginBottom:4,textAlign:"center"}},f[0]),h(Stepper,{value:f[2],onChange:f[3],step:f[4],min:f[5]}),h("div",{style:{textAlign:"center",fontSize:11,marginTop:2,color:"#aaa"}},f[2]+f[1]));})
-      )
-    ),
-    h("button",{className:"dq-btn",onClick:handleRecord,style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ きろくする")
-  ):null,
-
-  // メニュー記録
-  logMode==="menu"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-    // メニュー選択タブ
-    h("div",{style:{display:"flex",gap:3}},
-      menus.map(function(m,i){return h("button",{key:i,className:"dq-btn "+(selMenu===i?"active":""),onClick:function(){setSelMenu(i);},style:{flex:1,textAlign:"center",fontSize:11,padding:"7px 2px"}},m.name);})
-    ),
-    // メニュー内容プレビュー
-    h("div",{className:"dq-win",style:{padding:"10px 12px"}},
-      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
-        h("div",{style:{fontSize:12,color:"#ffdd00"}},menus[selMenu].name),
-        h("button",{className:"dq-btn",onClick:function(){setEditMenu(selMenu);},style:{fontSize:11,padding:"4px 8px",color:"#aaa",border:"1px solid #4444aa"}},"へんしゅう")
-      ),
-      menus[selMenu].items.length===0?h("div",{style:{fontSize:11,color:"#aaa",textAlign:"center",padding:8}},"しゅもくがありません"):
-      menus[selMenu].items.map(function(item,i){
-        return h("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,borderBottom:i<menus[selMenu].items.length-1?"1px solid #111144":"none",padding:"5px 0"}},
-          h("div",null,
-            h("span",{style:{color:PART_COLOR[getPartForExercise(item.exercise)]||"#aaa"}},getPartForExercise(item.exercise)),
-            h("span",{style:{color:"#fff",marginLeft:6}},item.exercise)
-          ),
-          h("span",{style:{color:"#aaa",fontSize:11}},item.weight+"kg "+item.reps+"回 "+item.sets+"set")
-        );
-      })
-    ),
-    h("button",{className:"dq-btn",onClick:handleMenuRecord,style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ メニューをきろくする（"+menus[selMenu].items.length+"しゅもく）")
-  ):null,
-
-  // プロテイン削除済み
-
-
-  // 今日の記録
-  recentLog.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px"}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ きょうのきろく"),
-    recentLog.map(function(l,i){return h("div",{key:i,style:{borderBottom:i<recentLog.length-1?"1px solid #111144":"none",paddingBottom:5,marginBottom:5}},h("div",{style:{display:"flex",justifyContent:"space-between"}},h("span",{style:{fontSize:12}},l.exercise),h("span",{style:{fontSize:12,color:"#ffdd00"}},"+"+l.xp+"XP")),h("div",{style:{fontSize:10,color:"#aaa",marginTop:1}},h("span",{style:{color:PART_COLOR[l.part]}},l.part)," "+l.weight+"kg×"+l.reps+"回×"+l.sets+"set"));})
-  ):null
-):null,
-
-// ── HISTORY tab ──
-tab==="history"?h("div",null,
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
-      [["そうセッション",data.totalSessions||0,"かい"],["さいちょうれんぞく",data.maxStreak||0,"にち"],["しゅもくすう",Object.keys(data.exercises||{}).length,"しゅ"],["プロテイン",data.totalProtein||0,"ぱい"],["さいだいじゅうりょう",data.maxWeight||0,"kg"],["チェックイン",data.totalCheckIns||0,"かい"]].map(function(it){return h("div",{key:it[0],style:{borderBottom:"1px solid #111144",paddingBottom:6}},h("div",{style:{fontSize:10,color:"#aaa"}},it[0]),h("div",{style:{fontSize:18,color:"#ffdd00"}},it[1],h("span",{style:{fontSize:11,color:"#aaa"}},it[2])));})
-    )
-  ),
-  // トレーニング履歴（写真付き）
-  (data.workoutLog&&data.workoutLog.length>0)?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ トレーニングりれき"),
-    data.workoutLog.map(function(log,i){
-      return h("div",{key:i,style:{display:"flex",gap:8,alignItems:"flex-start",borderBottom:i<data.workoutLog.length-1?"1px solid #111144":"none",paddingBottom:8,marginBottom:8}},
-        log.photo?h("img",{src:log.photo,style:{width:56,height:56,objectFit:"cover",border:"2px solid #333366",flexShrink:0}}):h("div",{style:{width:56,height:56,background:"#111133",border:"2px solid #333366",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#444",flexShrink:0,textAlign:"center"}},"写真\nなし"),
+    // アバター
+    h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+      h("div",{style:{display:"flex",gap:12,alignItems:"flex-start"}},
+        h("div",{style:{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",width:90,height:90}},
+          h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],style:{width:180,height:180,objectFit:"contain",objectPosition:"center",imageRendering:"pixelated"},onError:function(e){e.target.style.display="none";}})
+        ),
         h("div",{style:{flex:1,minWidth:0}},
-          h("div",{style:{fontSize:11,color:"#ffdd00"}},log.date+" "+log.time),
-          (log.items||[]).map(function(it,j){return h("div",{key:j,style:{fontSize:11,color:"#ccc",marginTop:2}},h("span",{style:{color:PART_COLOR[it.part]||"#aaa"}},it.part)," "+it.exercise+" "+it.weight+"kg×"+it.reps+"×"+it.sets+"set");}),
-          h("div",{style:{fontSize:11,color:"#44ff44",marginTop:2}},"+"+log.xp+"XP")
+          h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}},
+            h("div",{style:{fontSize:13,color:"#ffdd00"}},"ゴリラ  LV"+level),
+            h("button",{onClick:handleProtein1,title:"プロテイン1杯",style:{background:"none",border:"none",cursor:"pointer",fontSize:22,lineHeight:1,padding:"0 2px"}},"🥤")
+          ),
+          h(DQBar,{value:current,max:needed,color:"#44ff44"}),
+          h("div",{style:{fontSize:10,color:"#aaa",marginTop:1,marginBottom:6}},current+"/"+needed+" XP"),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 4px"}},
+            PARTS.map(function(p){var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:2,minWidth:0}},h("span",{style:{fontSize:9,color:PART_COLOR[p],width:18,flexShrink:0}},p),h("div",{style:{flex:1,height:10,background:"#001100",border:"1px solid #336633",minWidth:0,overflow:"hidden"}},h("div",{style:{height:"100%",width:Math.min(Math.round((pi.current/pi.needed)*100),100)+"%",background:PART_COLOR[p],transition:"width 0.4s"}})),h("span",{style:{fontSize:9,color:"#aaa",width:18,flexShrink:0,textAlign:"right"}},"L"+pi.level));})
+          )
         )
-      );
-    })
-  ):h("div",{className:"dq-win",style:{padding:"10px",marginBottom:8,textAlign:"center",color:"#aaa",fontSize:12}},"まだきろくがありません"),
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ ぶいべつレベル"),
-    PARTS.map(function(p){var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{marginBottom:8}},h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}},h("span",{style:{color:PART_COLOR[p]}},p+" Lv."+pi.level),h("span",{style:{color:"#aaa"}},pi.current+"/"+pi.needed)),h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p]}));})
-  ),
-  Object.keys(data.exercises||{}).length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ しゅもくベスト"),
-    Object.entries(data.exercises||{}).map(function(e){return h("div",{key:e[0],style:{display:"flex",justifyContent:"space-between",fontSize:12,borderBottom:"1px solid #111144",padding:"4px 0"}},h("div",null,h("span",{style:{color:"#fff"}},e[0]),h("span",{style:{fontSize:10,marginLeft:6,color:PART_COLOR[e[1].part]||"#aaa"}},e[1].part)),h("span",{style:{color:"#aaa"}},e[1].maxWeight+"kg×"+e[1].count+"回"));})
-  ):null,
-  h("div",{style:{marginTop:16}},
-    !showReset?h("button",{className:"dq-btn",onClick:function(){setShowReset(true);},style:{width:"100%",textAlign:"center",fontSize:12,padding:"10px",border:"2px solid #ff4444",color:"#ff4444"}},"▶ データをぜんぶけす"):
-    h("div",{className:"dq-win",style:{padding:"10px 12px",border:"3px solid #ff4444"}},
-      h("div",{style:{fontSize:13,color:"#ff4444",marginBottom:10,textAlign:"center"}},"ほんとうにぜんぶけしますか？"),
-      h("div",{style:{display:"flex",gap:8}},
-        h("button",{className:"dq-btn",onClick:handleReset,style:{flex:1,textAlign:"center",color:"#ff4444",border:"2px solid #ff4444",fontSize:13,padding:"10px"}},"▶ はい"),
-        h("button",{className:"dq-btn",onClick:function(){setShowReset(false);},style:{flex:1,textAlign:"center",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13,padding:"10px"}},"▶ いいえ")
       )
-    )
-  )
-):null,
+    ),
 
-// ── BADGE tab ──
-tab==="badge"?h("div",null,
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:12,color:"#ffdd00"}},"バッジ "+earnedCount+" / "+BADGES.length),
-    h("div",{style:{fontSize:10,color:"#aaa",marginTop:2}},"▓".repeat(Math.floor(earnedCount/BADGES.length*20))+"░".repeat(20-Math.floor(earnedCount/BADGES.length*20)))
-  ),
-  h("div",{style:{display:"flex",flexDirection:"column",gap:4}},
-    BADGES.map(function(b){var got=(data.badges||[]).includes(b.id);return h("div",{key:b.id,className:"dq-win",style:{padding:"8px 10px",display:"flex",alignItems:"center",gap:8,opacity:got?1:0.4,borderColor:got?"#ffdd00":"#333366"}},h("span",{style:{fontSize:16,flexShrink:0}},got?"★":"☆"),h("div",{style:{flex:1}},h("div",{style:{fontSize:12,color:got?"#ffdd00":"#aaa"}},b.name),h("div",{style:{fontSize:10,color:"#666688"}},b.desc)),got?h("span",{style:{fontSize:10,color:"#44ff44"}},"かいほう"):null);})
-  )
-):null,
+    // チェックインバー
+    isActive?
+      h("div",{className:"dq-win",style:{padding:"8px 12px",marginBottom:8,border:"3px solid #44ff44",display:"flex",alignItems:"center",gap:8}},
+        checkIn&&checkIn.photo?h("img",{src:checkIn.photo,style:{width:44,height:44,objectFit:"cover",border:"2px solid #44ff44",flexShrink:0}}):null,
+        h("div",{style:{flex:1}},
+          h("div",{style:{fontSize:11,color:"#44ff44",animation:"pulse 1s infinite"}},"★ トレーニング中！"),
+          h("div",{style:{fontSize:11,color:"#aaa",marginTop:2}},"のこり "+fmtTime(remaining||0))
+        ),
+        h("button",{className:"dq-btn",onClick:function(){setShowCamera(true);},style:{fontSize:10,padding:"5px 6px",color:"#ffdd00",border:"2px solid #ffdd00",whiteSpace:"nowrap"}},"再撮影")
+      ):
+      h("button",{className:"dq-btn",onClick:function(){setShowCamera(true);},style:{width:"100%",textAlign:"center",fontSize:14,padding:"13px",border:"3px solid #44ff44",color:"#44ff44",marginBottom:8}},"📷 ▶ トレーニングかいし！"),
 
-h("div",{style:{height:24}})
-```
+    // タブ
+    h("div",{style:{display:"flex",gap:2,marginBottom:8,background:"rgba(0,0,0,0.3)"}},
+      [["log","▶ きろく"],["history","▶ れきし"],["badge","▶ バッジ"]].map(function(item){return h("button",{key:item[0],style:ts(item[0]),onClick:function(){setTab(item[0]);}},item[1]);})
+    ),
 
-);
+    // ── LOG tab ──
+    tab==="log"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+      !isActive?h("div",{style:{padding:"10px",textAlign:"center",color:"#ff4444",fontSize:11,background:"#110000",border:"2px solid #ff4444"}},"トレーニングを開始してから記録できます"):null,
+
+      // モード切替
+      h("div",{style:{display:"flex",gap:4,marginBottom:2}},
+        h("button",{className:"dq-btn "+(logMode==="single"?"active":""),onClick:function(){setLogMode("single");},style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ たんどくきろく"),
+        h("button",{className:"dq-btn "+(logMode==="menu"?"active":""),onClick:function(){setLogMode("menu");},style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ メニューきろく")
+      ),
+
+      // 単独記録
+      logMode==="single"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+        h("div",{className:"dq-win",style:{padding:"10px 12px"}},
+          h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ぶいをえらぶ"),
+          h("div",{style:{display:"flex",gap:3,marginBottom:12}},PARTS.map(function(p){return h("button",{key:p,className:"dq-btn "+(part===p?"active":""),onClick:function(){setPart(p);},style:{flex:1,fontSize:11,padding:"5px 2px",textAlign:"center",color:part===p?PART_COLOR[p]:"#aaa",borderBottom:part===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);})),
+          h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ しゅもくをえらぶ"),
+          h("select",{className:"dq-input",value:exercise,onChange:function(e){setExercise(e.target.value);},style:{width:"100%",fontSize:13,marginBottom:12}},PRESETS[part].map(function(e){return h("option",{key:e,value:e},e);})),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
+            [["じゅうりょう","kg",weight,setWeight,5,0],["かいすう","かい",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(function(f){return h("div",{key:f[0]},h("div",{style:{fontSize:10,color:"#aaa",marginBottom:4,textAlign:"center"}},f[0]),h(Stepper,{value:f[2],onChange:f[3],step:f[4],min:f[5]}),h("div",{style:{textAlign:"center",fontSize:11,marginTop:2,color:"#aaa"}},f[2]+f[1]));})
+          )
+        ),
+        h("button",{className:"dq-btn",onClick:handleRecord,style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ きろくする")
+      ):null,
+
+      // メニュー記録
+      logMode==="menu"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+        // メニュー選択タブ
+        h("div",{style:{display:"flex",gap:3}},
+          menus.map(function(m,i){return h("button",{key:i,className:"dq-btn "+(selMenu===i?"active":""),onClick:function(){setSelMenu(i);},style:{flex:1,textAlign:"center",fontSize:11,padding:"7px 2px"}},m.name);})
+        ),
+        // メニュー内容プレビュー
+        h("div",{className:"dq-win",style:{padding:"10px 12px"}},
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+            h("div",{style:{fontSize:12,color:"#ffdd00"}},menus[selMenu].name),
+            h("button",{className:"dq-btn",onClick:function(){setEditMenu(selMenu);},style:{fontSize:11,padding:"4px 8px",color:"#aaa",border:"1px solid #4444aa"}},"へんしゅう")
+          ),
+          menus[selMenu].items.length===0?h("div",{style:{fontSize:11,color:"#aaa",textAlign:"center",padding:8}},"しゅもくがありません"):
+          menus[selMenu].items.map(function(item,i){
+            return h("div",{key:i,style:{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,borderBottom:i<menus[selMenu].items.length-1?"1px solid #111144":"none",padding:"5px 0"}},
+              h("div",null,
+                h("span",{style:{color:PART_COLOR[getPartForExercise(item.exercise)]||"#aaa"}},getPartForExercise(item.exercise)),
+                h("span",{style:{color:"#fff",marginLeft:6}},item.exercise)
+              ),
+              h("span",{style:{color:"#aaa",fontSize:11}},item.weight+"kg "+item.reps+"回 "+item.sets+"set")
+            );
+          })
+        ),
+        h("button",{className:"dq-btn",onClick:handleMenuRecord,style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ メニューをきろくする（"+menus[selMenu].items.length+"しゅもく）")
+      ):null,
+
+      // プロテイン削除済み
+
+
+      // 今日の記録
+      recentLog.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px"}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ きょうのきろく"),
+        recentLog.map(function(l,i){return h("div",{key:i,style:{borderBottom:i<recentLog.length-1?"1px solid #111144":"none",paddingBottom:5,marginBottom:5}},h("div",{style:{display:"flex",justifyContent:"space-between"}},h("span",{style:{fontSize:12}},l.exercise),h("span",{style:{fontSize:12,color:"#ffdd00"}},"+"+l.xp+"XP")),h("div",{style:{fontSize:10,color:"#aaa",marginTop:1}},h("span",{style:{color:PART_COLOR[l.part]}},l.part)," "+l.weight+"kg×"+l.reps+"回×"+l.sets+"set"));})
+      ):null
+    ):null,
+
+    // ── HISTORY tab ──
+    tab==="history"?h("div",null,
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+          [["そうセッション",data.totalSessions||0,"かい"],["さいちょうれんぞく",data.maxStreak||0,"にち"],["しゅもくすう",Object.keys(data.exercises||{}).length,"しゅ"],["プロテイン",data.totalProtein||0,"ぱい"],["さいだいじゅうりょう",data.maxWeight||0,"kg"],["チェックイン",data.totalCheckIns||0,"かい"]].map(function(it){return h("div",{key:it[0],style:{borderBottom:"1px solid #111144",paddingBottom:6}},h("div",{style:{fontSize:10,color:"#aaa"}},it[0]),h("div",{style:{fontSize:18,color:"#ffdd00"}},it[1],h("span",{style:{fontSize:11,color:"#aaa"}},it[2])));})
+        )
+      ),
+      // トレーニング履歴（写真付き）
+      (data.workoutLog&&data.workoutLog.length>0)?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ トレーニングりれき"),
+        data.workoutLog.map(function(log,i){
+          return h("div",{key:i,style:{display:"flex",gap:8,alignItems:"flex-start",borderBottom:i<data.workoutLog.length-1?"1px solid #111144":"none",paddingBottom:8,marginBottom:8}},
+            log.photo?h("img",{src:log.photo,style:{width:56,height:56,objectFit:"cover",border:"2px solid #333366",flexShrink:0}}):h("div",{style:{width:56,height:56,background:"#111133",border:"2px solid #333366",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#444",flexShrink:0,textAlign:"center"}},"写真\nなし"),
+            h("div",{style:{flex:1,minWidth:0}},
+              h("div",{style:{fontSize:11,color:"#ffdd00"}},log.date+" "+log.time),
+              (log.items||[]).map(function(it,j){return h("div",{key:j,style:{fontSize:11,color:"#ccc",marginTop:2}},h("span",{style:{color:PART_COLOR[it.part]||"#aaa"}},it.part)," "+it.exercise+" "+it.weight+"kg×"+it.reps+"×"+it.sets+"set");}),
+              h("div",{style:{fontSize:11,color:"#44ff44",marginTop:2}},"+"+log.xp+"XP")
+            )
+          );
+        })
+      ):h("div",{className:"dq-win",style:{padding:"10px",marginBottom:8,textAlign:"center",color:"#aaa",fontSize:12}},"まだきろくがありません"),
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ ぶいべつレベル"),
+        PARTS.map(function(p){var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{marginBottom:8}},h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}},h("span",{style:{color:PART_COLOR[p]}},p+" Lv."+pi.level),h("span",{style:{color:"#aaa"}},pi.current+"/"+pi.needed)),h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p]}));})
+      ),
+      Object.keys(data.exercises||{}).length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ しゅもくベスト"),
+        Object.entries(data.exercises||{}).map(function(e){return h("div",{key:e[0],style:{display:"flex",justifyContent:"space-between",fontSize:12,borderBottom:"1px solid #111144",padding:"4px 0"}},h("div",null,h("span",{style:{color:"#fff"}},e[0]),h("span",{style:{fontSize:10,marginLeft:6,color:PART_COLOR[e[1].part]||"#aaa"}},e[1].part)),h("span",{style:{color:"#aaa"}},e[1].maxWeight+"kg×"+e[1].count+"回"));})
+      ):null,
+      h("div",{style:{marginTop:16}},
+        !showReset?h("button",{className:"dq-btn",onClick:function(){setShowReset(true);},style:{width:"100%",textAlign:"center",fontSize:12,padding:"10px",border:"2px solid #ff4444",color:"#ff4444"}},"▶ データをぜんぶけす"):
+        h("div",{className:"dq-win",style:{padding:"10px 12px",border:"3px solid #ff4444"}},
+          h("div",{style:{fontSize:13,color:"#ff4444",marginBottom:10,textAlign:"center"}},"ほんとうにぜんぶけしますか？"),
+          h("div",{style:{display:"flex",gap:8}},
+            h("button",{className:"dq-btn",onClick:handleReset,style:{flex:1,textAlign:"center",color:"#ff4444",border:"2px solid #ff4444",fontSize:13,padding:"10px"}},"▶ はい"),
+            h("button",{className:"dq-btn",onClick:function(){setShowReset(false);},style:{flex:1,textAlign:"center",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13,padding:"10px"}},"▶ いいえ")
+          )
+        )
+      )
+    ):null,
+
+    // ── BADGE tab ──
+    tab==="badge"?h("div",null,
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:12,color:"#ffdd00"}},"バッジ "+earnedCount+" / "+BADGES.length),
+        h("div",{style:{fontSize:10,color:"#aaa",marginTop:2}},"▓".repeat(Math.floor(earnedCount/BADGES.length*20))+"░".repeat(20-Math.floor(earnedCount/BADGES.length*20)))
+      ),
+      h("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+        BADGES.map(function(b){var got=(data.badges||[]).includes(b.id);return h("div",{key:b.id,className:"dq-win",style:{padding:"8px 10px",display:"flex",alignItems:"center",gap:8,opacity:got?1:0.4,borderColor:got?"#ffdd00":"#333366"}},h("span",{style:{fontSize:16,flexShrink:0}},got?"★":"☆"),h("div",{style:{flex:1}},h("div",{style:{fontSize:12,color:got?"#ffdd00":"#aaa"}},b.name),h("div",{style:{fontSize:10,color:"#666688"}},b.desc)),got?h("span",{style:{fontSize:10,color:"#44ff44"}},"かいほう"):null);})
+      )
+    ):null,
+
+    h("div",{style:{height:24}})
+  );
 }
-ReactDOM.createRoot(document.getElementById(“root”)).render(React.createElement(App));
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
-
 </body>
 </html>
