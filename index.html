@@ -279,6 +279,7 @@ function App(){
   var data=_d[0];var setData=_d[1];
   var _uid=useState(function(){return window.GQ?window.GQ.getOrCreateUserId():"";});
   var uid=_uid[0];
+  var _tab=useState("log");var tab=_tab[0];var setTab=_tab[1];
   var _showSearch=useState(false);var showSearch=_showSearch[0];var setShowSearch=_showSearch[1];
   var _searchId=useState("");var searchId=_searchId[0];var setSearchId=_searchId[1];
   var _searchResult=useState(null);var searchResult=_searchResult[0];var setSearchResult=_searchResult[1];
