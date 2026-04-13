@@ -464,7 +464,7 @@ function App(){
   return h("div",{style:{maxWidth:430,margin:"0 auto",padding:"10px 12px",background:"#0a0a1a",minHeight:"100vh"}},
     showCamera?h(CameraModal,{onPhoto:onPhoto,onClose:function(){setShowCamera(false);}}):null,
     showBanana?h(BananaSwipe,{onSlide:function(){setShowBanana(false);setShowRoulette(true);}}):null,
-    showRoulette?h(RouletteOverlay,{onResult:function(r){setRouletteResult(r);setXpMult(r.mult);setShowRoulette(false);}}):null,
+    showRoulette?h(RouletteOverlay,{onResult:function(r){setRouletteResult(r);setXpMult(r.mult);setShowRoulette(false);setShowCamera(false);}}):null,
     editMenu!==null?h(MenuEditor,{menu:menus[editMenu],onSave:function(m){var nm=menus.map(function(x,i){return i===editMenu?m:x;});saveMenus(nm);setEditMenu(null);},onClose:function(){setEditMenu(null);}}):null,
     showNameEditor?h(NameEditor,{current:gorillaName,onSave:function(n){setGorillaName(n);localStorage.setItem(NK,n);if(window.GQ&&uid)window.GQ.syncToFirebase(uid,data,n);setShowNameEditor(false);},onClose:function(){setShowNameEditor(false);}}):null,
     xpAnim?h(XPPop,{xp:xpAnim,onDone:function(){setXpAnim(null);}}):null,
