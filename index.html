@@ -84,28 +84,51 @@ function rollRoulette(){
   return ROULETTE_TABLE[0];
 }
 
-// ペンタゴンチャート
+// ペンタゴンチャート（ラベル改善）
 function PentagonChart(props){
   var partXP=props.partXP||{};
-  var size=props.size||100;
-  var cx=size/2,cy=size/2,r=size*0.38;
+  var size=props.size||140;
+  var cx=size/2,cy=size/2+8,r=size*0.30;
   var angles=PARTS.map(function(_,i){return(i*72-90)*Math.PI/180;});
   var maxLv=10;
-  var points=PARTS.map(function(p,i){
-    var lv=Math.min(partLevelInfo(partXP[p]||0).level,maxLv);
-    var ratio=lv/maxLv;
-    return[cx+r*ratio*Math.cos(angles[i]),cy+r*ratio*Math.sin(angles[i])];
-  });
+  var points=PARTS.map(function(p,i){var lv=Math.min(partLevelInfo(partXP[p]||0).level,maxLv);var ratio=lv/maxLv;return[cx+r*ratio*Math.cos(angles[i]),cy+r*ratio*Math.sin(angles[i])];});
   var bgPoints=angles.map(function(a){return[cx+r*Math.cos(a),cy+r*Math.sin(a)];});
-  return h("svg",{width:size,height:size,style:{display:"block"}},
+  // ラベル位置をより外側に
+  var labelR=r+22;
+  return h("svg",{width:size,height:size+10,style:{display:"block",overflow:"visible"}},
     h("polygon",{points:bgPoints.map(function(p){return p.join(",");}).join(" "),fill:"rgba(68,136,255,0.1)",stroke:"#4444aa",strokeWidth:1}),
     h("polygon",{points:points.map(function(p){return p.join(",");}).join(" "),fill:"rgba(255,221,0,0.25)",stroke:"#ffdd00",strokeWidth:2}),
     PARTS.map(function(p,i){
       var lv=partLevelInfo(partXP[p]||0).level;
-      var tx=cx+(r+12)*Math.cos(angles[i]);
-      var ty=cy+(r+12)*Math.sin(angles[i]);
-      return h("text",{key:p,x:tx,y:ty+4,textAnchor:"middle",fontSize:9,fill:PART_COLOR[p]},p+"L"+lv);
+      var tx=cx+labelR*Math.cos(angles[i]);
+      var ty=cy+labelR*Math.sin(angles[i]);
+      return h("g",{key:p},
+        h("text",{x:tx,y:ty,textAnchor:"middle",dominantBaseline:"middle",fontSize:9,fill:PART_COLOR[p],style:{fontFamily:"'DotGothic16',monospace"}},p),
+        h("text",{x:tx,y:ty+11,textAnchor:"middle",dominantBaseline:"middle",fontSize:9,fill:"#aaa",style:{fontFamily:"'DotGothic16',monospace"}},"L"+lv)
+      );
     })
+  );
+}
+
+// フレンドカード（ゴリラアイコン付き）
+function FriendCard(props){
+  var fd=props.fd;var fid=props.fid;var onRemove=props.onRemove;
+  var friendStage=getStage(fd.level||1);
+  return h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}},
+      h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+        h("div",{style:{width:48,height:48,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}},
+          h("img",{src:GORILLA_IMGS[friendStage],style:{width:96,height:96,objectFit:"contain",imageRendering:"pixelated"}})
+        ),
+        h("div",null,
+          h("div",{style:{fontSize:13,color:"#ffdd00"}},fd.gorillaName||"ゴリラ"),
+          h("div",{style:{fontSize:10,color:"#aaa"}},"ID: "+fid),
+          h("div",{style:{fontSize:10,color:"#aaa"}},"LV"+fd.level+" / さいきん: "+fd.lastTraining)
+        )
+      ),
+      h("button",{className:"dq-btn",onClick:onRemove,style:{fontSize:11,padding:"4px 8px",color:"#ff4444",border:"1px solid #ff4444"}},"さくじょ")
+    ),
+    h("div",{style:{display:"flex",justifyContent:"center"}},h(PentagonChart,{partXP:fd.partXP,size:150}))
   );
 }
 
@@ -151,7 +174,46 @@ function RouletteOverlay(props){
   );
 }
 
-// カメラ
+// バナナスワイプ画面
+function BananaSwipe(props){
+  var _dragging=useState(false);var dragging=_dragging[0];var setDragging=_dragging[1];
+  var _x=useState(0);var x=_x[0];var setX=_x[1];
+  var _done=useState(false);var done=_done[0];var setDone=_done[1];
+  var startX=useRef(0);
+  var trackW=260;var thumbW=60;var maxX=trackW-thumbW;
+
+  function onStart(e){
+    if(done)return;
+    setDragging(true);
+    startX.current=(e.touches?e.touches[0].clientX:e.clientX)-x;
+  }
+  function onMove(e){
+    if(!dragging||done)return;
+    var nx=Math.min(maxX,Math.max(0,(e.touches?e.touches[0].clientX:e.clientX)-startX.current));
+    setX(nx);
+    if(nx>=maxX-4){setDone(true);setDragging(false);setTimeout(function(){props.onSlide();},300);}
+  }
+  function onEnd(){setDragging(false);}
+
+  return h("div",{style:{position:"fixed",inset:0,zIndex:2400,background:"rgba(0,0,0,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}},
+    h("div",{className:"dq-win",style:{padding:"24px 20px",textAlign:"center",border:"4px solid #ffdd00",width:320}},
+      h("div",{style:{fontSize:14,color:"#ffdd00",marginBottom:6}},"★ ゴリラのきぶんがよさそうだぞ？"),
+      h("div",{style:{fontSize:11,color:"#aaa",marginBottom:20}},"バナナをスライドしてルーレットをまわせ！"),
+      // スライダートラック
+      h("div",{
+        style:{width:trackW,height:56,background:"#000022",border:"3px solid #4444aa",borderRadius:28,margin:"0 auto",position:"relative",overflow:"hidden",cursor:"pointer"},
+        onMouseDown:onStart,onMouseMove:onMove,onMouseUp:onEnd,onMouseLeave:onEnd,
+        onTouchStart:onStart,onTouchMove:onMove,onTouchEnd:onEnd
+      },
+        // ガイドテキスト
+        h("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#444",userSelect:"none",pointerEvents:"none"}},done?"":"→ →  スライド  → →"),
+        // バナナつまみ
+        h("div",{style:{position:"absolute",top:4,left:4+x,width:thumbW-8,height:44,borderRadius:22,background:done?"#44ff44":"#ffdd00",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,transition:dragging?"none":"transform 0.1s",userSelect:"none",pointerEvents:"none"}},done?"✓":"🍌")
+      ),
+      h("div",{style:{fontSize:11,color:"#666688",marginTop:12}},"さあ、うんをためせ！")
+    )
+  );
+}
 function CameraModal(props){
   var videoRef=useRef(null),canvasRef=useRef(null),streamRef=useRef(null);
   var _s=useState(false);var streaming=_s[0];var setStreaming=_s[1];
@@ -249,7 +311,7 @@ function App(){
   var _sm=useState(0);var selMenu=_sm[0];var setSelMenu=_sm[1];
   var _em=useState(null);var editMenu=_em[0];var setEditMenu=_em[1];
   var _ne=useState(false);var showNameEditor=_ne[0];var setShowNameEditor=_ne[1];
-  var _roulette=useState(null);var rouletteResult=_roulette[0];var setRouletteResult=_roulette[1];
+  var _showBanana=useState(false);var showBanana=_showBanana[0];var setShowBanana=_showBanana[1];
   var _showRoulette=useState(false);var showRoulette=_showRoulette[0];var setShowRoulette=_showRoulette[1];
   var _xpMult=useState(1);var xpMult=_xpMult[0];var setXpMult=_xpMult[1];
   var _ci=useState(function(){try{var c=JSON.parse(localStorage.getItem(CK)||"null");return c&&(Date.now()-c.startTime<VALID_MS)?c:null;}catch(e){return null;}});
@@ -370,7 +432,7 @@ function App(){
     setCheckIn(ci);try{localStorage.setItem(CK,JSON.stringify(ci));}catch(e){}
     var d=Object.assign({},data,{totalCheckIns:(data.totalCheckIns||0)+1});
     save(d);
-    if(doRoulette){setShowRoulette(true);}else{setXpMult(1);}
+    if(doRoulette){setShowBanana(true);}else{setXpMult(1);}
   }
 
   function handleReset(){save(INIT);setCheckIn(null);localStorage.removeItem(CK);setShowReset(false);}
@@ -401,6 +463,7 @@ function App(){
 
   return h("div",{style:{maxWidth:430,margin:"0 auto",padding:"10px 12px",background:"#0a0a1a",minHeight:"100vh"}},
     showCamera?h(CameraModal,{onPhoto:onPhoto,onClose:function(){setShowCamera(false);}}):null,
+    showBanana?h(BananaSwipe,{onSlide:function(){setShowBanana(false);setShowRoulette(true);}}):null,
     showRoulette?h(RouletteOverlay,{onResult:function(r){setRouletteResult(r);setXpMult(r.mult);setShowRoulette(false);}}):null,
     editMenu!==null?h(MenuEditor,{menu:menus[editMenu],onSave:function(m){var nm=menus.map(function(x,i){return i===editMenu?m:x;});saveMenus(nm);setEditMenu(null);},onClose:function(){setEditMenu(null);}}):null,
     showNameEditor?h(NameEditor,{current:gorillaName,onSave:function(n){setGorillaName(n);localStorage.setItem(NK,n);if(window.GQ&&uid)window.GQ.syncToFirebase(uid,data,n);setShowNameEditor(false);},onClose:function(){setShowNameEditor(false);}}):null,
@@ -424,7 +487,7 @@ function App(){
           ),
           // 吹き出し広告
           h("a",{href:"https://www.mtgec.jp/shop/pages/refa_bubble_u.aspx",target:"_blank",style:{display:"block",marginTop:4,background:"#fff",color:"#000033",fontSize:9,padding:"3px 6px",borderRadius:4,border:"2px solid #ffdd00",cursor:"pointer",textDecoration:"none",lineHeight:1.3,textAlign:"center",maxWidth:90,position:"relative"}},
-            "汗の放置は甘えだ[PR]",
+            "汗の放置は甘えだ",h("span",{style:{fontSize:8,color:"#888"}},"[PR]"),
             h("div",{style:{position:"absolute",top:-6,left:"50%",transform:"translateX(-50%)",width:0,height:0,borderLeft:"5px solid transparent",borderRight:"5px solid transparent",borderBottom:"6px solid #ffdd00"}})
           )
         ),
