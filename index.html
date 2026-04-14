@@ -139,6 +139,31 @@ function LevelUpOverlay(props){useEffect(function(){var t=setTimeout(props.onDon
 function XPPop(props){useEffect(function(){var t=setTimeout(props.onDone,1400);return function(){clearTimeout(t);};},[]);return h("div",{style:{position:"fixed",top:"30%",left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",animation:"xpPop 1.4s ease forwards",fontSize:20,color:"#ffdd00",textShadow:"0 0 8px #ffdd00"}},props.text||("＋"+props.xp+"XP"));}
 function DegradePop(props){useEffect(function(){var t=setTimeout(props.onDone,2500);return function(){clearTimeout(t);};},[]);return h("div",{style:{position:"fixed",top:"25%",left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",animation:"degrade 2.5s ease forwards",textAlign:"center"}},h("div",{style:{fontSize:16,color:"#ff4444",textShadow:"0 0 8px #ff0000"}},"▼ "+props.xp+"XP げんしょう"),h("div",{style:{fontSize:11,color:"#ff8888",marginTop:4}},"トレーニングをさぼったぞ！"));}
 
+// バナナスワイプ画面
+function BananaSwipe(props){
+  var _dragging=useState(false);var dragging=_dragging[0];var setDragging=_dragging[1];
+  var _x=useState(0);var x=_x[0];var setX=_x[1];
+  var _done=useState(false);var done=_done[0];var setDone=_done[1];
+  var startX=useRef(0);
+  var trackW=260;var thumbW=60;var maxX=trackW-thumbW;
+  function onStart(e){if(done)return;e.preventDefault();setDragging(true);startX.current=(e.touches?e.touches[0].clientX:e.clientX)-x;}
+  function onMove(e){if(!dragging||done)return;e.preventDefault();var nx=Math.min(maxX,Math.max(0,(e.touches?e.touches[0].clientX:e.clientX)-startX.current));setX(nx);if(nx>=maxX-4){setDone(true);setDragging(false);setTimeout(function(){props.onSlide();},300);}}
+  function onEnd(){setDragging(false);}
+  return h("div",{style:{position:"fixed",inset:0,zIndex:2400,background:"rgba(0,0,0,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}},
+    h("div",{className:"dq-win",style:{padding:"24px 20px",textAlign:"center",border:"4px solid #ffdd00",width:320}},
+      h("div",{style:{fontSize:14,color:"#ffdd00",marginBottom:6}},"★ ゴリラのきぶんがよさそうだぞ？"),
+      h("div",{style:{fontSize:11,color:"#aaa",marginBottom:20}},"バナナをスライドしてルーレットをまわせ！"),
+      h("div",{style:{width:trackW,height:56,background:"#000022",border:"3px solid #4444aa",borderRadius:28,margin:"0 auto",position:"relative",overflow:"hidden",cursor:"pointer",touchAction:"none"},
+        onMouseDown:onStart,onMouseMove:onMove,onMouseUp:onEnd,onMouseLeave:onEnd,
+        onTouchStart:onStart,onTouchMove:onMove,onTouchEnd:onEnd},
+        h("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#444",userSelect:"none",pointerEvents:"none"}},done?"":"→ →  スライド  → →"),
+        h("div",{style:{position:"absolute",top:4,left:4+x,width:thumbW-8,height:44,borderRadius:22,background:done?"#44ff44":"#ffdd00",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,userSelect:"none",pointerEvents:"none"}},done?"✓":"🍌")
+      ),
+      h("div",{style:{fontSize:11,color:"#666688",marginTop:12}},"さあ、うんをためせ！")
+    )
+  );
+}
+
 // ルーレット演出
 function RouletteOverlay(props){
   var _phase=useState(0);var phase=_phase[0];var setPhase=_phase[1];
@@ -147,17 +172,12 @@ function RouletteOverlay(props){
   var timerRef=useRef(null);
   useEffect(function(){
     var count=0,speed=80,maxCount=25;
-    function spin(){
-      setIdx(function(i){return(i+1)%ROULETTE_TABLE.length;});
-      count++;speed=Math.min(speed+8,400);
-      if(count<maxCount){timerRef.current=setTimeout(spin,speed);}
-      else{var r=rollRoulette();setResult(r);setPhase(2);}
-    }
+    function spin(){setIdx(function(i){return(i+1)%ROULETTE_TABLE.length;});count++;speed=Math.min(speed+8,400);if(count<maxCount){timerRef.current=setTimeout(spin,speed);}else{var r=rollRoulette();setResult(r);setPhase(2);}}
     timerRef.current=setTimeout(spin,speed);
     return function(){clearTimeout(timerRef.current);};
   },[]);
   var cur=ROULETTE_TABLE[idx];
-  return h("div",{style:{position:"fixed",inset:0,zIndex:2500,background:"rgba(0,0,0,0.85)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}},
+  return h("div",{style:{position:"fixed",inset:0,zIndex:2500,background:"rgba(0,0,0,0.85)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",touchAction:"auto"}},
     h("div",{className:"dq-win",style:{padding:"24px 32px",textAlign:"center",border:"4px solid #ffdd00",minWidth:280}},
       h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:12}},"★ ゴリラのきぶんがいい！★"),
       phase<2?h("div",{style:{animation:"rouletteSpin 0.3s infinite"}},
@@ -167,50 +187,12 @@ function RouletteOverlay(props){
       ):h("div",null,
         h("div",{style:{fontSize:36,color:result.color,marginBottom:8}},"★"),
         h("div",{style:{fontSize:28,color:result.color}},result.label),
-        h("div",{style:{fontSize:13,color:"#fff",marginTop:8,marginBottom:16}},"このトレーニングの\nけいけんちが "+result.label+" になる！"),
-        h("button",{className:"dq-btn",onClick:function(){props.onResult(result);},style:{width:"100%",textAlign:"center",padding:"12px",color:"#ffdd00",border:"3px solid #ffdd00",fontSize:15}},"▶▶ トレーニングかいし！")
+        h("div",{style:{fontSize:13,color:"#fff",marginTop:8,marginBottom:16}},"このトレーニングのけいけんちが "+result.label+" になる！"),
+        h("button",{
+          onClick:function(e){e.stopPropagation();props.onResult(result);},
+          style:{width:"100%",textAlign:"center",padding:"14px",color:"#ffdd00",border:"3px solid #ffdd00",fontSize:15,background:"#000066",cursor:"pointer",fontFamily:"'DotGothic16',monospace",display:"block",position:"relative",zIndex:2600}
+        },"▶▶ トレーニングかいし！")
       )
-    )
-  );
-}
-
-// バナナスワイプ画面
-function BananaSwipe(props){
-  var _dragging=useState(false);var dragging=_dragging[0];var setDragging=_dragging[1];
-  var _x=useState(0);var x=_x[0];var setX=_x[1];
-  var _done=useState(false);var done=_done[0];var setDone=_done[1];
-  var startX=useRef(0);
-  var trackW=260;var thumbW=60;var maxX=trackW-thumbW;
-
-  function onStart(e){
-    if(done)return;
-    setDragging(true);
-    startX.current=(e.touches?e.touches[0].clientX:e.clientX)-x;
-  }
-  function onMove(e){
-    if(!dragging||done)return;
-    var nx=Math.min(maxX,Math.max(0,(e.touches?e.touches[0].clientX:e.clientX)-startX.current));
-    setX(nx);
-    if(nx>=maxX-4){setDone(true);setDragging(false);setTimeout(function(){props.onSlide();},300);}
-  }
-  function onEnd(){setDragging(false);}
-
-  return h("div",{style:{position:"fixed",inset:0,zIndex:2400,background:"rgba(0,0,0,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}},
-    h("div",{className:"dq-win",style:{padding:"24px 20px",textAlign:"center",border:"4px solid #ffdd00",width:320}},
-      h("div",{style:{fontSize:14,color:"#ffdd00",marginBottom:6}},"★ ゴリラのきぶんがよさそうだぞ？"),
-      h("div",{style:{fontSize:11,color:"#aaa",marginBottom:20}},"バナナをスライドしてルーレットをまわせ！"),
-      // スライダートラック
-      h("div",{
-        style:{width:trackW,height:56,background:"#000022",border:"3px solid #4444aa",borderRadius:28,margin:"0 auto",position:"relative",overflow:"hidden",cursor:"pointer"},
-        onMouseDown:onStart,onMouseMove:onMove,onMouseUp:onEnd,onMouseLeave:onEnd,
-        onTouchStart:onStart,onTouchMove:onMove,onTouchEnd:onEnd
-      },
-        // ガイドテキスト
-        h("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#444",userSelect:"none",pointerEvents:"none"}},done?"":"→ →  スライド  → →"),
-        // バナナつまみ
-        h("div",{style:{position:"absolute",top:4,left:4+x,width:thumbW-8,height:44,borderRadius:22,background:done?"#44ff44":"#ffdd00",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,transition:dragging?"none":"transform 0.1s",userSelect:"none",pointerEvents:"none"}},done?"✓":"🍌")
-      ),
-      h("div",{style:{fontSize:11,color:"#666688",marginTop:12}},"さあ、うんをためせ！")
     )
   );
 }
@@ -243,32 +225,69 @@ function CameraModal(props){
   );
 }
 
-// メニューエディタ
+// メニューエディタ（部位→種目選択）
 function MenuEditor(props){
   var menu=props.menu;
   var _n=useState(menu.name);var name=_n[0];var setName=_n[1];
   var _items=useState(menu.items.map(function(i){return Object.assign({},i);}));var items=_items[0];var setItems=_items[1];
+  // 追加用の部位・種目状態
+  var _addPart=useState("胸");var addPart=_addPart[0];var setAddPart=_addPart[1];
+
   function updateItem(idx,key,val){setItems(function(prev){var a=prev.map(function(x){return Object.assign({},x);});a[idx][key]=val;return a;});}
-  function addItem(){setItems(function(prev){return prev.concat([{exercise:"ベンチプレス",weight:60,reps:10,sets:3}]);});}
+  function addItem(){setItems(function(prev){return prev.concat([{exercise:PRESETS[addPart][0],weight:60,reps:10,sets:3}]);});}
   function removeItem(idx){setItems(function(prev){return prev.filter(function(_,i){return i!==idx;});});}
+
   return h("div",{style:{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,0.9)",overflowY:"auto",padding:"12px"}},
     h("div",{className:"dq-win",style:{padding:"12px",maxWidth:430,margin:"0 auto"}},
       h("div",{style:{fontSize:14,color:"#ffdd00",marginBottom:12}},"▼ メニューへんしゅう"),
-      h("div",{style:{marginBottom:10}},h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"メニュー名"),h("input",{className:"dq-input",value:name,onChange:function(e){setName(e.target.value);},style:{width:"100%",fontSize:14}})),
+      h("div",{style:{marginBottom:10}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"メニュー名"),
+        h("input",{className:"dq-input",value:name,onChange:function(e){setName(e.target.value);},style:{width:"100%",fontSize:14}})
+      ),
       items.map(function(item,idx){
+        var itemPart=getPartForExercise(item.exercise);
         return h("div",{key:idx,className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#4444aa"}},
-          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},h("div",{style:{fontSize:11,color:"#aaa"}},"しゅもく "+(idx+1)),h("button",{className:"dq-btn",onClick:function(){removeItem(idx);},style:{fontSize:11,padding:"2px 8px",color:"#ff4444",border:"1px solid #ff4444"}},"✕")),
-          h("select",{className:"dq-input",value:item.exercise,onChange:function(e){updateItem(idx,"exercise",e.target.value);},style:{width:"100%",marginBottom:6,fontSize:12}},ALL_EXERCISES.map(function(e){return h("option",{key:e,value:e},e);})),
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
+            h("div",{style:{fontSize:11,color:"#aaa"}},"しゅもく "+(idx+1)),
+            h("button",{className:"dq-btn",onClick:function(){removeItem(idx);},style:{fontSize:11,padding:"2px 8px",color:"#ff4444",border:"1px solid #ff4444"}},"✕")
+          ),
+          // 部位選択
+          h("div",{style:{display:"flex",gap:3,marginBottom:6}},
+            PARTS.map(function(p){return h("button",{key:p,className:"dq-btn "+(itemPart===p?"active":""),onClick:function(){updateItem(idx,"exercise",PRESETS[p][0]);},style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:itemPart===p?PART_COLOR[p]:"#aaa",borderBottom:itemPart===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);})
+          ),
+          // 種目選択
+          h("select",{className:"dq-input",value:item.exercise,onChange:function(e){updateItem(idx,"exercise",e.target.value);},style:{width:"100%",marginBottom:6,fontSize:12}},
+            PRESETS[itemPart].map(function(e){return h("option",{key:e,value:e},e);})
+          ),
           h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}},
             [["じゅうりょう",item.weight,"weight",5,0],["かいすう",item.reps,"reps",1,1],["セット",item.sets,"sets",1,1]].map(function(f){
-              return h("div",{key:f[0]},h("div",{style:{fontSize:9,color:"#aaa",marginBottom:2,textAlign:"center"}},f[0]),
-                h("div",{style:{display:"flex",alignItems:"center"}},h("button",{className:"dq-btn",onClick:function(){updateItem(idx,f[2],Math.max(f[4],f[1]-f[3]));},style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"◀"),h("span",{style:{flex:1,textAlign:"center",fontSize:12,color:"#ffdd00",background:"#000011",padding:"3px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},f[1]),h("button",{className:"dq-btn",onClick:function(){updateItem(idx,f[2],f[1]+f[3]);},style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"▶")));
+              return h("div",{key:f[0]},
+                h("div",{style:{fontSize:9,color:"#aaa",marginBottom:2,textAlign:"center"}},f[0]),
+                h("div",{style:{display:"flex",alignItems:"center"}},
+                  h("button",{className:"dq-btn",onClick:function(){updateItem(idx,f[2],Math.max(f[4],f[1]-f[3]));},style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"◀"),
+                  h("span",{style:{flex:1,textAlign:"center",fontSize:12,color:"#ffdd00",background:"#000011",padding:"3px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},f[1]),
+                  h("button",{className:"dq-btn",onClick:function(){updateItem(idx,f[2],f[1]+f[3]);},style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"▶")
+                )
+              );
             })
           )
         );
       }),
-      items.length<10&&h("button",{className:"dq-btn",onClick:addItem,style:{width:"100%",textAlign:"center",padding:"8px",color:"#44ff44",border:"2px solid #44ff44",marginBottom:8,fontSize:12}},"▶ しゅもくをついか"),
-      h("div",{style:{display:"flex",gap:8,marginTop:4}},h("button",{className:"dq-btn",onClick:props.onClose,style:{flex:1,textAlign:"center",padding:"10px",color:"#ff4444",border:"2px solid #ff4444",fontSize:13}},"▶ キャンセル"),h("button",{className:"dq-btn",onClick:function(){props.onSave({name:name,items:items});},style:{flex:1,textAlign:"center",padding:"10px",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13}},"▶ ほぞん"))
+      // 種目追加（部位選択付き）
+      items.length<10?h("div",{className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#44ff44"}},
+        h("div",{style:{fontSize:11,color:"#44ff44",marginBottom:6}},"▼ しゅもくをついか"),
+        h("div",{style:{display:"flex",gap:3,marginBottom:6}},
+          PARTS.map(function(p){return h("button",{key:p,className:"dq-btn "+(addPart===p?"active":""),onClick:function(){setAddPart(p);},style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:addPart===p?PART_COLOR[p]:"#aaa",borderBottom:addPart===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);})
+        ),
+        h("div",{style:{fontSize:10,color:"#aaa",marginBottom:4}},addPart+"の種目"),
+        h("div",{style:{display:"flex",flexWrap:"wrap",gap:4}},
+          PRESETS[addPart].map(function(e){return h("button",{key:e,className:"dq-btn",onClick:function(){setItems(function(prev){return prev.concat([{exercise:e,weight:60,reps:10,sets:3}]);});},style:{fontSize:11,padding:"5px 8px",color:"#44ff44",border:"1px solid #44ff44"}},e);})
+        )
+      ):null,
+      h("div",{style:{display:"flex",gap:8,marginTop:4}},
+        h("button",{className:"dq-btn",onClick:props.onClose,style:{flex:1,textAlign:"center",padding:"10px",color:"#ff4444",border:"2px solid #ff4444",fontSize:13}},"▶ キャンセル"),
+        h("button",{className:"dq-btn",onClick:function(){props.onSave({name:name,items:items});},style:{flex:1,textAlign:"center",padding:"10px",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13}},"▶ ほぞん")
+      )
     )
   );
 }
@@ -307,7 +326,7 @@ function App(){
   var _da=useState(null);var degradeAnim=_da[0];var setDegradeAnim=_da[1];
   var _sr=useState(false);var showReset=_sr[0];var setShowReset=_sr[1];
   var _cam=useState(false);var showCamera=_cam[0];var setShowCamera=_cam[1];
-  var _lm=useState("single");var logMode=_lm[0];var setLogMode=_lm[1];
+  var _lm=useState("menu");var logMode=_lm[0];var setLogMode=_lm[1];
   var _sm=useState(0);var selMenu=_sm[0];var setSelMenu=_sm[1];
   var _em=useState(null);var editMenu=_em[0];var setEditMenu=_em[1];
   var _ne=useState(false);var showNameEditor=_ne[0];var setShowNameEditor=_ne[1];
@@ -424,11 +443,9 @@ function App(){
     if(result.newLevel>result.prevLevel)setTimeout(function(){setLvAnim(result.newLevel);},800);
   }
 
-  function onPhoto(dataUrl){
-    setShowCamera(false);
-    // 5回に1回ルーレット
+  function onCheckIn(){
     var doRoulette=Math.random()<0.2;
-    var ci={photo:dataUrl,startTime:Date.now()};
+    var ci={photo:null,startTime:Date.now()};
     setCheckIn(ci);try{localStorage.setItem(CK,JSON.stringify(ci));}catch(e){}
     var d=Object.assign({},data,{totalCheckIns:(data.totalCheckIns||0)+1});
     save(d);
@@ -462,9 +479,8 @@ function App(){
   function ts(t){return{flex:1,padding:"9px 0",border:"none",cursor:"pointer",fontSize:12,fontFamily:"'DotGothic16',monospace",background:tab===t?"rgba(92,184,122,0.18)":"rgba(255,255,255,0.05)",color:tab===t?"#5cb87a":"#aaa",boxShadow:tab===t?"inset 0 2px 4px rgba(0,0,0,0.3)":"inset 0 1px 3px rgba(0,0,0,0.2)",transition:"all 0.15s"};}
 
   return h("div",{style:{maxWidth:430,margin:"0 auto",padding:"10px 12px",background:"#0a0a1a",minHeight:"100vh"}},
-    showCamera?h(CameraModal,{onPhoto:onPhoto,onClose:function(){setShowCamera(false);}}):null,
     showBanana?h(BananaSwipe,{onSlide:function(){setShowBanana(false);setShowRoulette(true);}}):null,
-    showRoulette?h(RouletteOverlay,{onResult:function(r){setRouletteResult(r);setXpMult(r.mult);setShowRoulette(false);setShowCamera(false);}}):null,
+    showRoulette?h(RouletteOverlay,{onResult:function(r){setRouletteResult(r);setXpMult(r.mult);setShowRoulette(false);}}):null,
     editMenu!==null?h(MenuEditor,{menu:menus[editMenu],onSave:function(m){var nm=menus.map(function(x,i){return i===editMenu?m:x;});saveMenus(nm);setEditMenu(null);},onClose:function(){setEditMenu(null);}}):null,
     showNameEditor?h(NameEditor,{current:gorillaName,onSave:function(n){setGorillaName(n);localStorage.setItem(NK,n);if(window.GQ&&uid)window.GQ.syncToFirebase(uid,data,n);setShowNameEditor(false);},onClose:function(){setShowNameEditor(false);}}):null,
     xpAnim?h(XPPop,{xp:xpAnim,onDone:function(){setXpAnim(null);}}):null,
@@ -512,15 +528,14 @@ function App(){
     // チェックイン
     isActive?
       h("div",{className:"dq-win",style:{padding:"8px 12px",marginBottom:8,border:"3px solid #44ff44",display:"flex",alignItems:"center",gap:8}},
-        checkIn&&checkIn.photo?h("img",{src:checkIn.photo,style:{width:44,height:44,objectFit:"cover",border:"2px solid #44ff44",flexShrink:0}}):null,
         h("div",{style:{flex:1}},
           h("div",{style:{fontSize:11,color:"#44ff44",animation:"pulse 1s infinite"}},"★ トレーニング中！"),
           xpMult>1?h("div",{style:{fontSize:11,color:"#ffdd00"}},"けいけんち "+xpMult+"倍ボーナス中！"):null,
           h("div",{style:{fontSize:11,color:"#aaa",marginTop:2}},"のこり "+fmtTime(remaining||0))
         ),
-        h("button",{className:"dq-btn",onClick:function(){setShowCamera(true);},style:{fontSize:10,padding:"5px 6px",color:"#ffdd00",border:"2px solid #ffdd00",whiteSpace:"nowrap"}},"再撮影")
+        h("button",{className:"dq-btn",onClick:onCheckIn,style:{fontSize:10,padding:"5px 6px",color:"#ffdd00",border:"2px solid #ffdd00",whiteSpace:"nowrap"}},"リセット")
       ):
-      h("button",{className:"dq-btn",onClick:function(){setShowCamera(true);},style:{width:"100%",textAlign:"center",fontSize:14,padding:"13px",border:"3px solid #44ff44",color:"#44ff44",marginBottom:8}},"📷 ▶ トレーニングかいし！"),
+      h("button",{className:"dq-btn",onClick:onCheckIn,style:{width:"100%",textAlign:"center",fontSize:14,padding:"13px",border:"3px solid #44ff44",color:"#44ff44",marginBottom:8}},"▶ トレーニングかいし！"),
 
     // タブ
     h("div",{style:{display:"flex",gap:2,marginBottom:8,background:"rgba(0,0,0,0.3)"}},
@@ -531,8 +546,8 @@ function App(){
     tab==="log"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
       !isActive?h("div",{style:{padding:"10px",textAlign:"center",color:"#ff4444",fontSize:11,background:"#110000",border:"2px solid #ff4444"}},"トレーニングを開始してから記録できます"):null,
       h("div",{style:{display:"flex",gap:4}},
-        h("button",{className:"dq-btn "+(logMode==="single"?"active":""),onClick:function(){setLogMode("single");},style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ たんどくきろく"),
-        h("button",{className:"dq-btn "+(logMode==="menu"?"active":""),onClick:function(){setLogMode("menu");},style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ メニューきろく")
+        h("button",{className:"dq-btn "+(logMode==="menu"?"active":""),onClick:function(){setLogMode("menu");},style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ メニューきろく"),
+        h("button",{className:"dq-btn "+(logMode==="single"?"active":""),onClick:function(){setLogMode("single");},style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ たんどくきろく")
       ),
       logMode==="single"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
         h("div",{className:"dq-win",style:{padding:"10px 12px"}},
