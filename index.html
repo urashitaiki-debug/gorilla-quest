@@ -20,10 +20,10 @@ select,input{appearance:none;-webkit-appearance:none;}
 @keyframes levelup{0%{opacity:0;transform:scale(0.8)}20%{opacity:1;transform:scale(1.05)}80%{opacity:1}100%{opacity:0}}
 @keyframes xpPop{0%{opacity:0;transform:translateY(0)}20%{opacity:1;transform:translateY(-8px)}80%{opacity:1;transform:translateY(-20px)}100%{opacity:0;transform:translateY(-32px)}}
 @keyframes flash{0%,100%{opacity:0}50%{opacity:0.7}}
-@keyframes badgePop{0%{opacity:0;transform:translateY(20px)}15%{opacity:1;transform:translateY(0)}80%{opacity:1}100%{opacity:0}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 @keyframes rouletteSpin{0%{transform:scale(1)}50%{transform:scale(1.1)}100%{transform:scale(1)}}
 @keyframes degrade{0%{opacity:0;transform:translateY(-10px)}30%{opacity:1;transform:translateY(0)}80%{opacity:1}100%{opacity:0}}
+@keyframes badgePop{0%{opacity:0;transform:translateY(20px)}15%{opacity:1;transform:translateY(0)}80%{opacity:1}100%{opacity:0}}
 </style>
 </head>
 <body>
@@ -32,39 +32,74 @@ select,input{appearance:none;-webkit-appearance:none;}
 // ── Firebase ──────────────────────────────────────────────
 import{initializeApp}from"https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
 import{getAuth,signInWithPopup,GoogleAuthProvider,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
-import{getFirestore,doc,setDoc,getDoc,updateDoc,addDoc,collection,query,where,onSnapshot,serverTimestamp,Timestamp}from"https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+import{getFirestore,doc,setDoc,getDoc,updateDoc,addDoc,collection,query,where,onSnapshot,serverTimestamp,Timestamp,getDocs,writeBatch,increment}from"https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 
 const fbConfig={apiKey:"AIzaSyChzYzgoK-k0Yk9ftiY7vMOeHDpYEOeDlw",authDomain:"gorilla-quest-b189c.firebaseapp.com",projectId:"gorilla-quest-b189c",storageBucket:"gorilla-quest-b189c.firebasestorage.app",messagingSenderId:"581762660070",appId:"1:581762660070:web:803c2a77a9341b4c89ad27"};
 const fbApp=initializeApp(fbConfig);
 const auth=getAuth(fbApp);
 const db=getFirestore(fbApp);
 
-// Firebase ユーザードキュメントの作成・取得
-async function ensureUserDoc(uid,gorillaName,gqId){
+// ── GQ ID生成（UID固定） ──────────────────────────────────
+// FirebaseのUIDからGQ-XXXXXXを生成（1アカウント1ID）
+function makeGQId(uid){return"GQ-"+uid.slice(0,6).toUpperCase();}
+
+// ── ユーザードキュメント保証 ──────────────────────────────
+// ログイン時に呼ぶ。既存ならそのまま返す、なければ新規作成
+async function ensureUserDoc(uid,gorillaName){
   const ref=doc(db,"users",uid);
   const snap=await getDoc(ref);
   if(!snap.exists()){
-    await setDoc(ref,{uid,gorillaName:gorillaName||"ゴリラ",gqId:gqId||"GQ-??????",xp:0,bananas:100,createdAt:serverTimestamp()});
+    const gqId=makeGQId(uid);
+    await setDoc(ref,{
+      uid,gqId,
+      gorillaName:gorillaName||"ゴリラ",
+      xp:0,bananas:100,
+      createdAt:serverTimestamp()
+    });
   }
   return(await getDoc(ref)).data();
 }
 
-// バトル中のXPをFirestoreに反映
-async function syncBattleXP(uid,totalXP){
+// ── バトルスコアを更新 ──────────────────────────────────
+// バトル開始時のXPを起点として差分をスコアに反映
+async function syncBattleScore(uid,gqId,currentTotalXP){
   try{
-    // challengerとして参加中のバトル
     const q1=query(collection(db,"battles"),where("challengerId","==",uid),where("status","==","active"));
     const q2=query(collection(db,"battles"),where("opponentId","==",uid),where("status","==","active"));
     const [s1,s2]=await Promise.all([getDocs(q1),getDocs(q2)]);
     const updates=[];
-    s1.forEach(d=>updates.push(updateDoc(doc(db,"battles",d.id),{challengerXP:totalXP})));
-    s2.forEach(d=>updates.push(updateDoc(doc(db,"battles",d.id),{opponentXP:totalXP})));
+    s1.forEach(d=>{
+      const baseXP=d.data().challengerBaseXP||0;
+      const score=Math.max(0,currentTotalXP-baseXP);
+      updates.push(updateDoc(doc(db,"battles",d.id),{challengerScore:score}));
+    });
+    s2.forEach(d=>{
+      const baseXP=d.data().opponentBaseXP||0;
+      const score=Math.max(0,currentTotalXP-baseXP);
+      updates.push(updateDoc(doc(db,"battles",d.id),{opponentScore:score}));
+    });
     await Promise.all(updates);
-  }catch(e){console.log("battle xp sync err",e);}
+  }catch(e){console.log("syncBattleScore err",e);}
 }
 
-// Firestore getDocs（onSnapshotとは別にワンショット取得用）
-import{getDocs}from"https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+// ── バトル終了処理 ──────────────────────────────────────
+async function finalizeBattle(battleId,battle){
+  try{
+    const cs=battle.challengerScore||0;
+    const os=battle.opponentScore||0;
+    let winnerId=null,loserId=null;
+    if(cs>os){winnerId=battle.challengerId;loserId=battle.opponentId;}
+    else if(os>cs){winnerId=battle.opponentId;loserId=battle.challengerId;}
+    // Firestoreを一括更新
+    const batch=writeBatch(db);
+    batch.update(doc(db,"battles",battleId),{status:"finished",winnerId:winnerId||"draw"});
+    if(winnerId){
+      batch.update(doc(db,"users",winnerId),{bananas:increment(10)});
+      batch.update(doc(db,"users",loserId),{bananas:increment(-5)});
+    }
+    await batch.commit();
+  }catch(e){console.log("finalizeBattle err",e);}
+}
 
 // ── React ────────────────────────────────────────────────
 var h=React.createElement,useState=React.useState,useEffect=React.useEffect,useCallback=React.useCallback,useRef=React.useRef;
@@ -73,17 +108,18 @@ var h=React.createElement,useState=React.useState,useEffect=React.useEffect,useC
 var PARTS=["胸","背中","脚","腕","肩"];
 var PART_COLOR={"胸":"#ff6666","背中":"#6699ff","脚":"#66ff66","腕":"#ffaa44","肩":"#cc66ff"};
 var PRESETS={"胸":["ベンチプレス","ダンベルフライ","ケーブルクロスオーバー","ディップス","インクラインプレス"],"背中":["デッドリフト","ラットプルダウン","ベントオーバーロウ","チンアップ"],"脚":["スクワット","レッグプレス","ランジ","レッグカール"],"腕":["バーベルカール","ハンマーカール","トライセプスプレスダウン","スカルクラッシャー"],"肩":["ショルダープレス","サイドレイズ","フロントレイズ","フェイスプル"]};
-var ALL_EXERCISES=[];Object.values(PRESETS).forEach(function(a){a.forEach(function(e){if(ALL_EXERCISES.indexOf(e)<0)ALL_EXERCISES.push(e);});});
+var ALL_EXERCISES=[];Object.values(PRESETS).forEach(a=>a.forEach(e=>{if(!ALL_EXERCISES.includes(e))ALL_EXERCISES.push(e);}));
 var BASE_URL="https://urashitaiki-debug.github.io/gorilla-quest/";
 var GORILLA_IMGS=[BASE_URL+"stage0.png",BASE_URL+"stage1.png",BASE_URL+"stage2.png",BASE_URL+"stage3.png",BASE_URL+"stage4.png"];
 var STAGE_LABELS=["あかちゃんゴリラ","こゴリラ","わかゴリラ","おとなゴリラ","さいきょうゴリラ"];
 var VALID_MS=2*60*60*1000;
-var SK="gorilla_quest_v3",CK="gorilla_checkin_v1",MK="gorilla_menus_v1",FK="gorilla_friends_v1",NK="gorilla_name_v1",GQID_KEY="gq_uid";
+var BATTLE_DURATION_MS=5*60*1000; // テスト用5分
+var SK="gorilla_quest_v4",CK="gorilla_checkin_v1",MK="gorilla_menus_v1",FK="gorilla_friends_v1",NK="gorilla_name_v1";
 var DEFAULT_MENUS=[{name:"メニューA",items:[{exercise:"ベンチプレス",weight:60,reps:10,sets:3},{exercise:"ダンベルフライ",weight:20,reps:10,sets:3}]},{name:"メニューB",items:[{exercise:"スクワット",weight:60,reps:10,sets:3},{exercise:"レッグプレス",weight:80,reps:10,sets:3}]},{name:"メニューC",items:[{exercise:"デッドリフト",weight:70,reps:10,sets:3},{exercise:"ラットプルダウン",weight:50,reps:10,sets:3}]}];
 var ROULETTE_TABLE=[{label:"1.5倍",mult:1.5,color:"#44ff44",prob:0.7},{label:"2倍",mult:2.0,color:"#ffdd00",prob:0.25},{label:"3倍",mult:3.0,color:"#ff4444",prob:0.05}];
 
-function levelInfo(xp){var lv=1,rem=xp,needed=100;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.3);}return{level:lv,current:rem,needed:needed};}
-function partLevelInfo(xp){var lv=1,rem=xp,needed=50;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.4);}return{level:lv,current:rem,needed:needed};}
+function levelInfo(xp){var lv=1,rem=xp,needed=100;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.3);}return{level:lv,current:rem,needed};}
+function partLevelInfo(xp){var lv=1,rem=xp,needed=50;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.4);}return{level:lv,current:rem,needed};}
 function getToday(){return new Date().toISOString().slice(0,10);}
 function getHour(){return new Date().getHours();}
 function daysDiff(a,b){return Math.floor((new Date(b)-new Date(a))/86400000);}
@@ -91,144 +127,124 @@ function getStreak(dates){if(!dates.length)return 0;var uniq=[...new Set(dates)]
 function getStage(lv){if(lv<3)return 0;if(lv<6)return 1;if(lv<10)return 2;if(lv<15)return 3;return 4;}
 function fmtTime(ms){var m=Math.floor(ms/60000);var s=Math.floor((ms%60000)/1000);return m+"分"+("0"+s).slice(-2)+"秒";}
 function fmtCountdown(endAt){
-  if(!endAt)return"--:--:--";
+  if(!endAt)return"--:--";
   var end=endAt.toDate?endAt.toDate().getTime():endAt;
   var diff=Math.max(0,end-Date.now());
-  var d=Math.floor(diff/86400000);
-  var hh=Math.floor((diff%86400000)/3600000);
-  var mm=Math.floor((diff%3600000)/60000);
-  var ss=Math.floor((diff%60000)/1000);
-  if(d>0)return d+"日 "+hh+"時間 "+mm+"分";
-  return("0"+hh).slice(-2)+":"+("0"+mm).slice(-2)+":"+("0"+ss).slice(-2);
+  var m=Math.floor(diff/60000);var s=Math.floor((diff%60000)/1000);
+  return("0"+m).slice(-2)+":"+("0"+s).slice(-2);
 }
-function getPartForExercise(ex){var found="胸";Object.keys(PRESETS).forEach(function(p){if(PRESETS[p].indexOf(ex)>=0)found=p;});return found;}
-function getOrCreateGQId(){var id=localStorage.getItem(GQID_KEY);if(!id){id="GQ-"+Math.random().toString(36).slice(2,8).toUpperCase();localStorage.setItem(GQID_KEY,id);}return id;}
-function calcDegradePenalty(lastDate){if(!lastDate||lastDate==="なし")return 0;var diff=daysDiff(lastDate,getToday());if(diff<3)return 0;if(diff===3)return 15;if(diff===4)return 23;return 30*(diff-4)+23;}
-function rollRoulette(){var r=Math.random();var cum=0;for(var i=0;i<ROULETTE_TABLE.length;i++){cum+=ROULETTE_TABLE[i].prob;if(r<cum)return ROULETTE_TABLE[i];}return ROULETTE_TABLE[0];}
+function getPartForEx(ex){var f="胸";Object.keys(PRESETS).forEach(p=>{if(PRESETS[p].includes(ex))f=p;});return f;}
+function calcDegradePenalty(lastDate){if(!lastDate)return 0;var diff=daysDiff(lastDate,getToday());if(diff<3)return 0;if(diff===3)return 15;if(diff===4)return 23;return 30*(diff-4)+23;}
+function rollRoulette(){var r=Math.random(),cum=0;for(var i=0;i<ROULETTE_TABLE.length;i++){cum+=ROULETTE_TABLE[i].prob;if(r<cum)return ROULETTE_TABLE[i];}return ROULETTE_TABLE[0];}
 
-// ── ペンタゴンチャート ──
-function PentagonChart(props){
-  var partXP=props.partXP||{};var size=props.size||140;
-  var cx=size/2,cy=size/2+8,r=size*0.30;
-  var angles=PARTS.map(function(_,i){return(i*72-90)*Math.PI/180;});
+// ── ペンタゴンチャート ──────────────────────────────────
+function PentagonChart({partXP={},size=140}){
+  var cx=size/2,cy=size/2+8,r=size*0.30,labelR=r+22;
+  var angles=PARTS.map((_,i)=>(i*72-90)*Math.PI/180);
   var maxLv=10;
-  var points=PARTS.map(function(p,i){var lv=Math.min(partLevelInfo(partXP[p]||0).level,maxLv);var ratio=lv/maxLv;return[cx+r*ratio*Math.cos(angles[i]),cy+r*ratio*Math.sin(angles[i])];});
-  var bgPoints=angles.map(function(a){return[cx+r*Math.cos(a),cy+r*Math.sin(a)];});
-  var labelR=r+22;
+  var pts=PARTS.map((p,i)=>{var lv=Math.min(partLevelInfo(partXP[p]||0).level,maxLv);return[cx+r*(lv/maxLv)*Math.cos(angles[i]),cy+r*(lv/maxLv)*Math.sin(angles[i])];});
+  var bgPts=angles.map(a=>[cx+r*Math.cos(a),cy+r*Math.sin(a)]);
   return h("svg",{width:size,height:size+10,style:{display:"block",overflow:"visible"}},
-    h("polygon",{points:bgPoints.map(function(p){return p.join(",");}).join(" "),fill:"rgba(68,136,255,0.1)",stroke:"#4444aa",strokeWidth:1}),
-    h("polygon",{points:points.map(function(p){return p.join(",");}).join(" "),fill:"rgba(255,221,0,0.25)",stroke:"#ffdd00",strokeWidth:2}),
-    PARTS.map(function(p,i){
+    h("polygon",{points:bgPts.map(p=>p.join(",")).join(" "),fill:"rgba(68,136,255,0.1)",stroke:"#4444aa",strokeWidth:1}),
+    h("polygon",{points:pts.map(p=>p.join(",")).join(" "),fill:"rgba(255,221,0,0.25)",stroke:"#ffdd00",strokeWidth:2}),
+    PARTS.map((p,i)=>{
       var lv=partLevelInfo(partXP[p]||0).level;
-      var tx=cx+labelR*Math.cos(angles[i]);var ty=cy+labelR*Math.sin(angles[i]);
+      var tx=cx+labelR*Math.cos(angles[i]),ty=cy+labelR*Math.sin(angles[i]);
       return h("g",{key:p},h("text",{x:tx,y:ty,textAnchor:"middle",dominantBaseline:"middle",fontSize:9,fill:PART_COLOR[p],style:{fontFamily:"'DotGothic16',monospace"}},p),h("text",{x:tx,y:ty+11,textAnchor:"middle",dominantBaseline:"middle",fontSize:9,fill:"#aaa",style:{fontFamily:"'DotGothic16',monospace"}},"L"+lv));
     })
   );
 }
 
-// ── フレンドカード ──
-function FriendCard(props){
-  var fd=props.fd,fid=props.fid,onRemove=props.onRemove;
-  var friendStage=getStage(fd.level||1);
-  return h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}},
-      h("div",{style:{display:"flex",alignItems:"center",gap:8}},
-        h("div",{style:{width:48,height:48,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}},
-          h("img",{src:GORILLA_IMGS[friendStage],style:{width:96,height:96,objectFit:"contain",imageRendering:"pixelated"}})
-        ),
-        h("div",null,
-          h("div",{style:{fontSize:13,color:"#ffdd00"}},fd.gorillaName||"ゴリラ"),
-          h("div",{style:{fontSize:10,color:"#aaa"}},"ID: "+fid),
-          h("div",{style:{fontSize:10,color:"#aaa"}},"LV"+(fd.level||1)+" / さいきん: "+(fd.lastTraining||"なし"))
-        )
-      ),
-      h("button",{className:"dq-btn",onClick:onRemove,style:{fontSize:11,padding:"4px 8px",color:"#ff4444",border:"1px solid #ff4444"}},"さくじょ")
-    ),
-    h("div",{style:{display:"flex",justifyContent:"center"}},h(PentagonChart,{partXP:fd.partXP,size:150}))
-  );
-}
-
-// ── バトルカード ──
-function BattleCard(props){
-  var battle=props.battle,currentGQId=props.currentGQId,onAccept=props.onAccept;
-  var _cd=useState("");var countdown=_cd[0];var setCountdown=_cd[1];
-  var isChallenger=battle.challengerGQId===currentGQId;
-  var myXP=isChallenger?battle.challengerXP:battle.opponentXP;
-  var oppXP=isChallenger?battle.opponentXP:battle.challengerXP;
+// ── バトルカード ──────────────────────────────────────────
+function BattleCard({battle,currentUid,onFinalize}){
+  var [cd,setCd]=useState("");
+  var isChallenger=battle.challengerId===currentUid;
+  var myScore=isChallenger?(battle.challengerScore||0):(battle.opponentScore||0);
+  var oppScore=isChallenger?(battle.opponentScore||0):(battle.challengerScore||0);
   var myName=isChallenger?battle.challengerName:battle.opponentName;
   var oppName=isChallenger?battle.opponentName:battle.challengerName;
-  var total=myXP+oppXP;
-  var myPct=total>0?Math.round(myXP/total*100):50;
+  var total=myScore+oppScore;
+  var myPct=total>0?Math.round(myScore/total*100):50;
 
-  useEffect(function(){
+  useEffect(()=>{
     if(battle.status!=="active"||!battle.endAt)return;
-    function tick(){setCountdown(fmtCountdown(battle.endAt));}
-    tick();var t=setInterval(tick,1000);return function(){clearInterval(t);};
+    function tick(){
+      var end=battle.endAt.toDate?battle.endAt.toDate().getTime():battle.endAt;
+      if(Date.now()>=end&&onFinalize)onFinalize(battle.id,battle);
+      setCd(fmtCountdown(battle.endAt));
+    }
+    tick();var t=setInterval(tick,1000);return()=>clearInterval(t);
   },[battle]);
 
-  var statusColor={pending:"#ffaa44",active:"#44ff44",finished:"#aaa"};
-  var statusLabel={pending:"⏳ しょうにんまち",active:"⚔ バトル中！",finished:"🏁 しゅうりょう"};
+  var won=battle.status==="finished"&&battle.winnerId===currentUid;
+  var lost=battle.status==="finished"&&battle.winnerId&&battle.winnerId!==currentUid&&battle.winnerId!=="draw";
+  var draw=battle.status==="finished"&&battle.winnerId==="draw";
 
-  return h("div",{className:"dq-win",style:{padding:"12px",marginBottom:8}},
+  return h("div",{className:"dq-win",style:{padding:"10px",marginBottom:8}},
+    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
+      h("span",{style:{fontSize:11,color:battle.status==="active"?"#44ff44":"#aaa"}},battle.status==="active"?"⚔ バトル中！":"🏁 しゅうりょう"),
+      battle.status==="active"&&h("span",{style:{fontSize:12,color:"#ffdd00",fontWeight:"bold"}},"⏱ "+cd)
+    ),
     h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
-      h("span",{style:{fontSize:12,color:statusColor[battle.status]||"#aaa"}},statusLabel[battle.status]||battle.status),
-      battle.status==="active"&&h("span",{style:{fontSize:11,color:"#aaa"}},"のこり "+countdown)
-    ),
-    // VS表示
-    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}},
-      h("div",{style:{textAlign:"center",flex:1}},
-        h("div",{style:{fontSize:11,color:"#ffdd00",marginBottom:2}},myName),
-        h("div",{style:{fontSize:22,color:"#44ff44",fontWeight:"bold"}},myXP),
-        h("div",{style:{fontSize:9,color:"#aaa"}},"XP")
-      ),
+      h("div",{style:{textAlign:"center",flex:1}},h("div",{style:{fontSize:11,color:"#ffdd00",marginBottom:2}},myName),h("div",{style:{fontSize:24,color:"#44ff44",fontWeight:"bold"}},myScore),h("div",{style:{fontSize:9,color:"#aaa"}},"スコア")),
       h("div",{style:{fontSize:16,color:"#ff4444"}},"VS"),
-      h("div",{style:{textAlign:"center",flex:1}},
-        h("div",{style:{fontSize:11,color:"#ffdd00",marginBottom:2}},oppName),
-        h("div",{style:{fontSize:22,color:"#ff6666",fontWeight:"bold"}},oppXP),
-        h("div",{style:{fontSize:9,color:"#aaa"}},"XP")
+      h("div",{style:{textAlign:"center",flex:1}},h("div",{style:{fontSize:11,color:"#ffdd00",marginBottom:2}},oppName),h("div",{style:{fontSize:24,color:"#ff6666",fontWeight:"bold"}},oppScore),h("div",{style:{fontSize:9,color:"#aaa"}},"スコア"))
+    ),
+    battle.status==="active"&&h("div",{style:{marginBottom:6}},
+      h("div",{style:{height:12,background:"#001100",border:"1px solid #336633",overflow:"hidden",borderRadius:2,position:"relative"}},
+        h("div",{style:{height:"100%",width:myPct+"%",background:"#44ff44",transition:"width 0.5s",borderRadius:2}}),
+        h("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,0.7)",pointerEvents:"none"}},myPct+"% vs "+(100-myPct)+"%")
       )
     ),
-    // XPゲージ
-    battle.status==="active"&&h("div",{style:{marginBottom:10}},
-      h("div",{style:{height:12,background:"#001100",border:"1px solid #336633",overflow:"hidden",position:"relative",borderRadius:2}},
-        h("div",{style:{height:"100%",width:myPct+"%",background:"#44ff44",transition:"width 0.6s",borderRadius:2}}),
-        h("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,0.6)",pointerEvents:"none"}},myPct+"% vs "+(100-myPct)+"%")
-      ),
-      h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:9,color:"#aaa",marginTop:2}},
-        h("span",null,"あなた"),h("span",null,"あいて")
-      )
-    ),
-    // 承認ボタン
-    battle.status==="pending"&&!isChallenger&&h("button",{className:"dq-btn",onClick:function(){onAccept(battle.id);},style:{width:"100%",textAlign:"center",padding:"10px",color:"#44ff44",border:"2px solid #44ff44",fontSize:13}},"✓ たいせんをしょうにんする"),
-    battle.status==="pending"&&isChallenger&&h("div",{style:{fontSize:11,color:"#aaa",textAlign:"center",padding:"6px"}},"あいての承認をまっています…"),
-    // 結果
     battle.status==="finished"&&h("div",{style:{textAlign:"center",padding:"6px"}},
-      battle.winnerId===currentGQId
-        ?h("div",{style:{fontSize:14,color:"#ffdd00"}},"🏆 あなたのかち！ +20🍌")
-        :battle.winnerId
-          ?h("div",{style:{fontSize:14,color:"#aaa"}},"はいぼく… -5🍌")
-          :h("div",{style:{fontSize:14,color:"#aaa"}},"ひきわけ")
+      won?h("div",{style:{fontSize:14,color:"#ffdd00"}},"🏆 あなたのかち！ +10🍌"):
+      lost?h("div",{style:{fontSize:14,color:"#aaa"}},"はいぼく… -5🍌"):
+      draw?h("div",{style:{fontSize:14,color:"#aaa"}},"ひきわけ"):null
     )
   );
 }
 
-// ── UI部品 ──
-function DQBar(props){var pct=Math.min(Math.round((props.value/props.max)*100),100);return h("div",{style:{width:props.width||"100%",height:10,background:"#001100",border:"1px solid #336633",display:"inline-block",verticalAlign:"middle"}},h("div",{style:{height:"100%",width:pct+"%",background:props.color,transition:"width 0.4s"}}));}
-function Stepper(props){var value=props.value,onChange=props.onChange,step=props.step||5,min=props.min||0;return h("div",{style:{display:"flex",alignItems:"center"}},h("button",{className:"dq-btn",onClick:function(){onChange(Math.max(min,value-step));},style:{width:32,textAlign:"center",padding:"4px",fontSize:14}},"◀"),h("span",{style:{flex:1,textAlign:"center",fontSize:13,color:"#ffdd00",background:"#000011",padding:"5px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},value),h("button",{className:"dq-btn",onClick:function(){onChange(value+step);},style:{width:32,textAlign:"center",padding:"4px",fontSize:14}},"▶"));}
-function LevelUpOverlay(props){useEffect(function(){var t=setTimeout(props.onDone,2800);return function(){clearTimeout(t);};},[]);return h("div",{style:{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}},h("div",{style:{animation:"flash 0.3s ease 2",background:"rgba(255,255,100,0.12)",position:"absolute",inset:0}}),h("div",{className:"dq-win",style:{padding:"20px 32px",textAlign:"center",animation:"levelup 2.8s ease forwards",border:"4px solid #ffdd00"}},h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:8}},"✦ ✦ ✦"),h("div",{style:{fontSize:18,color:"#ffdd00",lineHeight:1.8}},"レベルが あがった！",h("br"),h("span",{style:{fontSize:24,color:"#fff"}},"Lv."+props.level)),h("div",{style:{fontSize:13,color:"#ffdd00",marginTop:8}},"✦ ✦ ✦")));}
-function XPPop(props){useEffect(function(){var t=setTimeout(props.onDone,1400);return function(){clearTimeout(t);};},[]);return h("div",{style:{position:"fixed",top:"30%",left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",animation:"xpPop 1.4s ease forwards",fontSize:20,color:"#ffdd00",textShadow:"0 0 8px #ffdd00"}},"＋"+(props.xp)+"XP");}
-function DegradePop(props){useEffect(function(){var t=setTimeout(props.onDone,2500);return function(){clearTimeout(t);};},[]);return h("div",{style:{position:"fixed",top:"25%",left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",animation:"degrade 2.5s ease forwards",textAlign:"center"}},h("div",{style:{fontSize:16,color:"#ff4444",textShadow:"0 0 8px #ff0000"}},"▼ "+props.xp+"XP げんしょう"),h("div",{style:{fontSize:11,color:"#ff8888",marginTop:4}},"トレーニングをさぼったぞ！"));}
+// ── フレンドカード ────────────────────────────────────────
+function FriendCard({fd,fid,onRemove,onBattle,battleStatus}){
+  var stage=getStage(fd.level||1);
+  return h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}},
+      h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+        h("div",{style:{width:48,height:48,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}},
+          h("img",{src:GORILLA_IMGS[stage],style:{width:96,height:96,objectFit:"contain",imageRendering:"pixelated"}})
+        ),
+        h("div",null,
+          h("div",{style:{fontSize:13,color:"#ffdd00"}},fd.gorillaName||"ゴリラ"),
+          h("div",{style:{fontSize:10,color:"#4488ff"}},"ID: "+fid),
+          h("div",{style:{fontSize:10,color:"#aaa"}},"LV"+(fd.level||1)+" 🍌"+(fd.bananas||0))
+        )
+      ),
+      h("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+        h("button",{className:"dq-btn",onClick:onRemove,style:{fontSize:10,padding:"3px 7px",color:"#ff4444",border:"1px solid #ff4444"}},"さくじょ"),
+        battleStatus==="active"
+          ?h("button",{className:"dq-btn",style:{fontSize:10,padding:"3px 7px",color:"#aaa",border:"1px solid #555",cursor:"default"}},"バトル中")
+          :h("button",{className:"dq-btn",onClick:onBattle,style:{fontSize:10,padding:"3px 7px",color:"#ff6666",border:"1px solid #ff6666"}},"⚔ たいせん")
+      )
+    ),
+    h("div",{style:{display:"flex",justifyContent:"center"}},h(PentagonChart,{partXP:fd.partXP||{},size:150}))
+  );
+}
 
-// ── バナナスワイプ ──
-function BananaSwipe(props){
-  var _dragging=useState(false);var dragging=_dragging[0];var setDragging=_dragging[1];
-  var _x=useState(0);var x=_x[0];var setX=_x[1];
-  var _done=useState(false);var done=_done[0];var setDone=_done[1];
+// ── UI部品 ──────────────────────────────────────────────
+function DQBar({value,max,color,width="100%"}){var pct=Math.min(Math.round((value/max)*100),100);return h("div",{style:{width,height:10,background:"#001100",border:"1px solid #336633",display:"inline-block",verticalAlign:"middle"}},h("div",{style:{height:"100%",width:pct+"%",background:color,transition:"width 0.4s"}}));}
+function Stepper({value,onChange,step=5,min=0}){return h("div",{style:{display:"flex",alignItems:"center"}},h("button",{className:"dq-btn",onClick:()=>onChange(Math.max(min,value-step)),style:{width:32,textAlign:"center",padding:"4px",fontSize:14}},"◀"),h("span",{style:{flex:1,textAlign:"center",fontSize:13,color:"#ffdd00",background:"#000011",padding:"5px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},value),h("button",{className:"dq-btn",onClick:()=>onChange(value+step),style:{width:32,textAlign:"center",padding:"4px",fontSize:14}},"▶"));}
+function LevelUpOverlay({level,onDone}){useEffect(()=>{var t=setTimeout(onDone,2800);return()=>clearTimeout(t);},[]);return h("div",{style:{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}},h("div",{style:{animation:"flash 0.3s ease 2",background:"rgba(255,255,100,0.12)",position:"absolute",inset:0}}),h("div",{className:"dq-win",style:{padding:"20px 32px",textAlign:"center",animation:"levelup 2.8s ease forwards",border:"4px solid #ffdd00"}},h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:8}},"✦ ✦ ✦"),h("div",{style:{fontSize:18,color:"#ffdd00",lineHeight:1.8}},"レベルが あがった！",h("br"),h("span",{style:{fontSize:24,color:"#fff"}},"Lv."+level)),h("div",{style:{fontSize:13,color:"#ffdd00",marginTop:8}},"✦ ✦ ✦")));}
+function XPPop({xp,onDone}){useEffect(()=>{var t=setTimeout(onDone,1400);return()=>clearTimeout(t);},[]);return h("div",{style:{position:"fixed",top:"30%",left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",animation:"xpPop 1.4s ease forwards",fontSize:20,color:"#ffdd00",textShadow:"0 0 8px #ffdd00"}},"＋"+xp+"XP");}
+function DegradePop({xp,onDone}){useEffect(()=>{var t=setTimeout(onDone,2500);return()=>clearTimeout(t);},[]);return h("div",{style:{position:"fixed",top:"25%",left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",animation:"degrade 2.5s ease forwards",textAlign:"center"}},h("div",{style:{fontSize:16,color:"#ff4444",textShadow:"0 0 8px #ff0000"}},"▼ "+xp+"XP げんしょう"),h("div",{style:{fontSize:11,color:"#ff8888",marginTop:4}},"さぼりは禁物！"));}
+
+// ── バナナスワイプ ──────────────────────────────────────
+function BananaSwipe({onSlide}){
+  var [x,setX]=useState(0),[done,setDone]=useState(false),[drag,setDrag]=useState(false);
   var startX=useRef(0);var trackW=260,thumbW=60,maxX=trackW-thumbW;
-  function onStart(e){if(done)return;e.preventDefault();setDragging(true);startX.current=(e.touches?e.touches[0].clientX:e.clientX)-x;}
-  function onMove(e){if(!dragging||done)return;e.preventDefault();var nx=Math.min(maxX,Math.max(0,(e.touches?e.touches[0].clientX:e.clientX)-startX.current));setX(nx);if(nx>=maxX-4){setDone(true);setDragging(false);setTimeout(function(){props.onSlide();},300);}}
-  function onEnd(){setDragging(false);}
-  return h("div",{style:{position:"fixed",inset:0,zIndex:2400,background:"rgba(0,0,0,0.88)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}},
+  var onStart=e=>{if(done)return;e.preventDefault();setDrag(true);startX.current=(e.touches?e.touches[0].clientX:e.clientX)-x;};
+  var onMove=e=>{if(!drag||done)return;e.preventDefault();var nx=Math.min(maxX,Math.max(0,(e.touches?e.touches[0].clientX:e.clientX)-startX.current));setX(nx);if(nx>=maxX-4){setDone(true);setDrag(false);setTimeout(onSlide,300);}};
+  var onEnd=()=>setDrag(false);
+  return h("div",{style:{position:"fixed",inset:0,zIndex:2400,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center"}},
     h("div",{className:"dq-win",style:{padding:"24px 20px",textAlign:"center",border:"4px solid #ffdd00",width:320}},
       h("div",{style:{fontSize:14,color:"#ffdd00",marginBottom:6}},"★ ゴリラのきぶんがよさそうだぞ？"),
       h("div",{style:{fontSize:11,color:"#aaa",marginBottom:20}},"バナナをスライドしてルーレットをまわせ！"),
@@ -240,360 +256,342 @@ function BananaSwipe(props){
   );
 }
 
-// ── ルーレット ──
-function RouletteOverlay(props){
-  var _phase=useState(0);var phase=_phase[0];var setPhase=_phase[1];
-  var _result=useState(null);var result=_result[0];var setResult=_result[1];
-  var _idx=useState(0);var idx=_idx[0];var setIdx=_idx[1];
-  var timerRef=useRef(null);
-  useEffect(function(){
-    var count=0,speed=80,maxCount=25;
-    function spin(){setIdx(function(i){return(i+1)%ROULETTE_TABLE.length;});count++;speed=Math.min(speed+8,400);if(count<maxCount){timerRef.current=setTimeout(spin,speed);}else{var r=rollRoulette();setResult(r);setPhase(2);}}
-    timerRef.current=setTimeout(spin,speed);return function(){clearTimeout(timerRef.current);};
+// ── ルーレット ──────────────────────────────────────────
+function RouletteOverlay({onResult}){
+  var [phase,setPhase]=useState(0),[result,setResult]=useState(null),[idx,setIdx]=useState(0);
+  var t=useRef(null);
+  useEffect(()=>{
+    var count=0,speed=80;
+    function spin(){setIdx(i=>(i+1)%ROULETTE_TABLE.length);count++;speed=Math.min(speed+8,400);if(count<25){t.current=setTimeout(spin,speed);}else{var r=rollRoulette();setResult(r);setPhase(2);}}
+    t.current=setTimeout(spin,speed);return()=>clearTimeout(t.current);
   },[]);
   var cur=ROULETTE_TABLE[idx];
-  return h("div",{style:{position:"fixed",inset:0,zIndex:2500,background:"rgba(0,0,0,0.85)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",touchAction:"auto"}},
+  return h("div",{style:{position:"fixed",inset:0,zIndex:2500,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",touchAction:"auto"}},
     h("div",{className:"dq-win",style:{padding:"24px 32px",textAlign:"center",border:"4px solid #ffdd00",minWidth:280}},
       h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:12}},"★ ゴリラのきぶんがいい！★"),
-      phase<2?h("div",{style:{animation:"rouletteSpin 0.3s infinite"}},
-        h("div",{style:{fontSize:36,color:cur.color,marginBottom:8}},"✦"),
-        h("div",{style:{fontSize:28,color:cur.color,fontWeight:"bold"}},"けいけんち "+cur.label),
-        h("div",{style:{fontSize:12,color:"#aaa",marginTop:8}},"ルーレット中...")
-      ):h("div",null,
-        h("div",{style:{fontSize:36,color:result.color,marginBottom:8}},"★"),
-        h("div",{style:{fontSize:28,color:result.color}},result.label),
-        h("div",{style:{fontSize:13,color:"#fff",marginTop:8,marginBottom:16}},"このトレーニングのけいけんちが "+result.label+" になる！"),
-        h("button",{onClick:function(e){e.stopPropagation();props.onResult(result);},style:{width:"100%",textAlign:"center",padding:"14px",color:"#ffdd00",border:"3px solid #ffdd00",fontSize:15,background:"#000066",cursor:"pointer",fontFamily:"'DotGothic16',monospace",display:"block",position:"relative",zIndex:2600}},"▶▶ トレーニングかいし！")
-      )
+      phase<2?h("div",{style:{animation:"rouletteSpin 0.3s infinite"}},h("div",{style:{fontSize:36,color:cur.color,marginBottom:8}},"✦"),h("div",{style:{fontSize:28,color:cur.color,fontWeight:"bold"}},"けいけんち "+cur.label),h("div",{style:{fontSize:12,color:"#aaa",marginTop:8}},"ルーレット中...")):
+      h("div",null,h("div",{style:{fontSize:36,color:result.color,marginBottom:8}},"★"),h("div",{style:{fontSize:28,color:result.color}},result.label),h("div",{style:{fontSize:13,color:"#fff",marginTop:8,marginBottom:16}},"けいけんちが "+result.label+" になる！"),h("button",{onClick:e=>{e.stopPropagation();onResult(result);},style:{width:"100%",textAlign:"center",padding:"14px",color:"#ffdd00",border:"3px solid #ffdd00",fontSize:15,background:"#000066",cursor:"pointer",fontFamily:"'DotGothic16',monospace",zIndex:2600}},"▶▶ トレーニングかいし！"))
     )
   );
 }
 
-// ── メニューエディタ ──
-function MenuEditor(props){
-  var menu=props.menu;
-  var _n=useState(menu.name);var name=_n[0];var setName=_n[1];
-  var _items=useState(menu.items.map(function(i){return Object.assign({},i);}));var items=_items[0];var setItems=_items[1];
-  var _addPart=useState("胸");var addPart=_addPart[0];var setAddPart=_addPart[1];
-  function updateItem(idx,key,val){setItems(function(prev){var a=prev.map(function(x){return Object.assign({},x);});a[idx][key]=val;return a;});}
-  function removeItem(idx){setItems(function(prev){return prev.filter(function(_,i){return i!==idx;});});}
+// ── メニューエディタ ────────────────────────────────────
+function MenuEditor({menu,onSave,onClose}){
+  var [name,setName]=useState(menu.name);
+  var [items,setItems]=useState(menu.items.map(i=>({...i})));
+  var [addPart,setAddPart]=useState("胸");
+  var upd=(idx,k,v)=>setItems(prev=>{var a=prev.map(x=>({...x}));a[idx][k]=v;return a;});
+  var del=idx=>setItems(prev=>prev.filter((_,i)=>i!==idx));
   return h("div",{style:{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,0.9)",overflowY:"auto",padding:"12px"}},
     h("div",{className:"dq-win",style:{padding:"12px",maxWidth:430,margin:"0 auto"}},
       h("div",{style:{fontSize:14,color:"#ffdd00",marginBottom:12}},"▼ メニューへんしゅう"),
-      h("div",{style:{marginBottom:10}},h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"メニュー名"),h("input",{className:"dq-input",value:name,onChange:function(e){setName(e.target.value);},style:{width:"100%",fontSize:14}})),
-      items.map(function(item,idx){
-        var itemPart=getPartForExercise(item.exercise);
+      h("input",{className:"dq-input",value:name,onChange:e=>setName(e.target.value),style:{width:"100%",fontSize:14,marginBottom:10}}),
+      items.map((item,idx)=>{
+        var ip=getPartForEx(item.exercise);
         return h("div",{key:idx,className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#4444aa"}},
-          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},h("div",{style:{fontSize:11,color:"#aaa"}},"しゅもく "+(idx+1)),h("button",{className:"dq-btn",onClick:function(){removeItem(idx);},style:{fontSize:11,padding:"2px 8px",color:"#ff4444",border:"1px solid #ff4444"}},"✕")),
-          h("div",{style:{display:"flex",gap:3,marginBottom:6}},PARTS.map(function(p){return h("button",{key:p,className:"dq-btn "+(itemPart===p?"active":""),onClick:function(){updateItem(idx,"exercise",PRESETS[p][0]);},style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:itemPart===p?PART_COLOR[p]:"#aaa",borderBottom:itemPart===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);})),
-          h("select",{className:"dq-input",value:item.exercise,onChange:function(e){updateItem(idx,"exercise",e.target.value);},style:{width:"100%",marginBottom:6,fontSize:12}},PRESETS[itemPart].map(function(e){return h("option",{key:e,value:e},e);})),
+          h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:6}},h("div",{style:{fontSize:11,color:"#aaa"}},"しゅもく "+(idx+1)),h("button",{className:"dq-btn",onClick:()=>del(idx),style:{fontSize:11,padding:"2px 8px",color:"#ff4444",border:"1px solid #ff4444"}},"✕")),
+          h("div",{style:{display:"flex",gap:3,marginBottom:6}},PARTS.map(p=>h("button",{key:p,className:"dq-btn "+(ip===p?"active":""),onClick:()=>upd(idx,"exercise",PRESETS[p][0]),style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:ip===p?PART_COLOR[p]:"#aaa",borderBottom:ip===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p))),
+          h("select",{className:"dq-input",value:item.exercise,onChange:e=>upd(idx,"exercise",e.target.value),style:{width:"100%",marginBottom:6,fontSize:12}},PRESETS[ip].map(e=>h("option",{key:e,value:e},e))),
           h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}},
-            [["じゅうりょう",item.weight,"weight",5,0],["かいすう",item.reps,"reps",1,1],["セット",item.sets,"sets",1,1]].map(function(f){return h("div",{key:f[0]},h("div",{style:{fontSize:9,color:"#aaa",marginBottom:2,textAlign:"center"}},f[0]),h("div",{style:{display:"flex",alignItems:"center"}},h("button",{className:"dq-btn",onClick:function(){updateItem(idx,f[2],Math.max(f[4],f[1]-f[3]));},style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"◀"),h("span",{style:{flex:1,textAlign:"center",fontSize:12,color:"#ffdd00",background:"#000011",padding:"3px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},f[1]),h("button",{className:"dq-btn",onClick:function(){updateItem(idx,f[2],f[1]+f[3]);},style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"▶")));})
+            [["じゅうりょう",item.weight,"weight",5,0],["かいすう",item.reps,"reps",1,1],["セット",item.sets,"sets",1,1]].map(f=>h("div",{key:f[0]},h("div",{style:{fontSize:9,color:"#aaa",marginBottom:2,textAlign:"center"}},f[0]),h("div",{style:{display:"flex"}},h("button",{className:"dq-btn",onClick:()=>upd(idx,f[2],Math.max(f[4],f[1]-f[3])),style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"◀"),h("span",{style:{flex:1,textAlign:"center",fontSize:12,color:"#ffdd00",background:"#000011",padding:"3px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},f[1]),h("button",{className:"dq-btn",onClick:()=>upd(idx,f[2],f[1]+f[3]),style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"▶"))))
           )
         );
       }),
-      items.length<10?h("div",{className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#44ff44"}},
+      items.length<10&&h("div",{className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#44ff44"}},
         h("div",{style:{fontSize:11,color:"#44ff44",marginBottom:6}},"▼ しゅもくをついか"),
-        h("div",{style:{display:"flex",gap:3,marginBottom:6}},PARTS.map(function(p){return h("button",{key:p,className:"dq-btn "+(addPart===p?"active":""),onClick:function(){setAddPart(p);},style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:addPart===p?PART_COLOR[p]:"#aaa",borderBottom:addPart===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);})),
-        h("div",{style:{display:"flex",flexWrap:"wrap",gap:4}},PRESETS[addPart].map(function(e){return h("button",{key:e,className:"dq-btn",onClick:function(){setItems(function(prev){return prev.concat([{exercise:e,weight:60,reps:10,sets:3}]);});},style:{fontSize:11,padding:"5px 8px",color:"#44ff44",border:"1px solid #44ff44"}},e);}))
-      ):null,
-      h("div",{style:{display:"flex",gap:8,marginTop:4}},h("button",{className:"dq-btn",onClick:props.onClose,style:{flex:1,textAlign:"center",padding:"10px",color:"#ff4444",border:"2px solid #ff4444",fontSize:13}},"▶ キャンセル"),h("button",{className:"dq-btn",onClick:function(){props.onSave({name:name,items:items});},style:{flex:1,textAlign:"center",padding:"10px",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13}},"▶ ほぞん"))
+        h("div",{style:{display:"flex",gap:3,marginBottom:6}},PARTS.map(p=>h("button",{key:p,className:"dq-btn "+(addPart===p?"active":""),onClick:()=>setAddPart(p),style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:addPart===p?PART_COLOR[p]:"#aaa",borderBottom:addPart===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p))),
+        h("div",{style:{display:"flex",flexWrap:"wrap",gap:4}},PRESETS[addPart].map(e=>h("button",{key:e,className:"dq-btn",onClick:()=>setItems(prev=>[...prev,{exercise:e,weight:60,reps:10,sets:3}]),style:{fontSize:11,padding:"5px 8px",color:"#44ff44",border:"1px solid #44ff44"}},e)))
+      ),
+      h("div",{style:{display:"flex",gap:8}},h("button",{className:"dq-btn",onClick:onClose,style:{flex:1,textAlign:"center",padding:"10px",color:"#ff4444",border:"2px solid #ff4444"}},"キャンセル"),h("button",{className:"dq-btn",onClick:()=>onSave({name,items}),style:{flex:1,textAlign:"center",padding:"10px",color:"#ffdd00",border:"2px solid #ffdd00"}},"ほぞん"))
     )
   );
 }
 
-// ── 名前編集 ──
-function NameEditor(props){
-  var _n=useState(props.current||"ゴリラ");var name=_n[0];var setName=_n[1];
+// ── 名前編集 ──────────────────────────────────────────────
+function NameEditor({current,onSave,onClose}){
+  var [name,setName]=useState(current||"ゴリラ");
   return h("div",{style:{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center"}},
     h("div",{className:"dq-win",style:{padding:"20px",width:280,textAlign:"center"}},
       h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:12}},"▼ なまえをつける"),
-      h("input",{className:"dq-input",value:name,onChange:function(e){setName(e.target.value);},maxLength:10,style:{width:"100%",fontSize:15,textAlign:"center",marginBottom:12}}),
-      h("div",{style:{display:"flex",gap:8}},h("button",{className:"dq-btn",onClick:props.onClose,style:{flex:1,textAlign:"center",padding:"10px",color:"#ff4444",border:"2px solid #ff4444"}},"キャンセル"),h("button",{className:"dq-btn",onClick:function(){props.onSave(name);},style:{flex:1,textAlign:"center",padding:"10px",color:"#ffdd00",border:"2px solid #ffdd00"}},"ほぞん"))
+      h("input",{className:"dq-input",value:name,onChange:e=>setName(e.target.value),maxLength:10,style:{width:"100%",fontSize:15,textAlign:"center",marginBottom:12}}),
+      h("div",{style:{display:"flex",gap:8}},h("button",{className:"dq-btn",onClick:onClose,style:{flex:1,textAlign:"center",padding:"10px",color:"#ff4444",border:"2px solid #ff4444"}},"キャンセル"),h("button",{className:"dq-btn",onClick:()=>onSave(name),style:{flex:1,textAlign:"center",padding:"10px",color:"#ffdd00",border:"2px solid #ffdd00"}},"ほぞん"))
     )
   );
 }
 
-// ── ログイン画面 ──
-function LoginScreen(props){
-  var _loading=useState(false);var loading=_loading[0];var setLoading=_loading[1];
-  var _err=useState("");var err=_err[0];var setErr=_err[1];
-  async function handleGoogle(){
+// ── ログイン画面 ──────────────────────────────────────────
+function LoginScreen(){
+  var [loading,setLoading]=useState(false),[err,setErr]=useState("");
+  async function go(){
     setLoading(true);setErr("");
-    try{
-      var provider=new GoogleAuthProvider();
-      await signInWithPopup(auth,provider);
-    }catch(e){setErr("ログインに失敗しました: "+e.message);}
+    try{await signInWithPopup(auth,new GoogleAuthProvider());}
+    catch(e){setErr("ログインに失敗しました");}
     setLoading(false);
   }
   return h("div",{style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,background:"#0a0a1a"}},
-    h("div",{style:{textAlign:"center",marginBottom:32}},
-      h("div",{style:{fontSize:24,color:"#ffdd00",letterSpacing:2,marginBottom:8}},"★ GORILLA QUEST ★"),
-      h("div",{style:{fontSize:12,color:"#aaa"}},"トレーニングでゴリラをそだてよう！")
-    ),
-    h("div",{style:{fontSize:60,marginBottom:24}},"🦍"),
+    h("div",{style:{textAlign:"center",marginBottom:32}},h("div",{style:{fontSize:24,color:"#ffdd00",letterSpacing:2,marginBottom:8}},"★ GORILLA QUEST ★"),h("div",{style:{fontSize:12,color:"#aaa"}},"トレーニングでゴリラをそだてよう！")),
+    h("div",{style:{fontSize:64,marginBottom:24}},"🦍"),
     h("div",{className:"dq-win",style:{padding:"24px",width:"100%",maxWidth:320,textAlign:"center"}},
-      h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:16}},"ログインしてはじめる"),
-      h("button",{className:"dq-btn",onClick:handleGoogle,style:{width:"100%",textAlign:"center",padding:"14px",color:"#fff",border:"2px solid #4488ff",fontSize:14,marginBottom:8}},loading?"ログイン中...":"🔵 Googleでログイン"),
+      h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:16}},"Googleでログイン"),
+      h("button",{className:"dq-btn",onClick:go,style:{width:"100%",textAlign:"center",padding:"14px",color:"#fff",border:"2px solid #4488ff",fontSize:14}},loading?"ログイン中...":"🔵 Googleでログイン"),
       err&&h("div",{style:{fontSize:11,color:"#ff4444",marginTop:8}},err)
     )
   );
 }
 
-// ── メインアプリ ──────────────────────────────────────────
-var INIT={totalXP:0,partXP:{},exercises:{},sessions:[],badges:[],totalSessions:0,maxStreak:0,level:1,totalProtein:0,nightRecord:false,morningRecord:false,noonRecord:false,prCount:0,totalSets:0,maxWeight:0,maxDailySessions:0,totalCheckIns:0,workoutLog:[],menuRecords:0};
+// ══════════════════════════════════════════════════════════
+// メインアプリ
+// ══════════════════════════════════════════════════════════
+var INIT={totalXP:0,partXP:{},exercises:{},sessions:[],totalSessions:0,maxStreak:0,level:1,totalProtein:0,nightRecord:false,morningRecord:false,noonRecord:false,prCount:0,totalSets:0,maxWeight:0,maxDailySessions:0,totalCheckIns:0,workoutLog:[],menuRecords:0};
 
 function App(){
-  // ── 認証状態 ──
-  var _authUser=useState(null);var authUser=_authUser[0];var setAuthUser=_authUser[1];
-  var _authLoading=useState(true);var authLoading=_authLoading[0];var setAuthLoading=_authLoading[1];
+  // ── 認証 ──
+  var [authUser,setAuthUser]=useState(null);
+  var [authLoading,setAuthLoading]=useState(true);
+  // Firestoreのユーザードキュメント（バナナ等）
+  var [userDoc,setUserDoc]=useState(null);
+  // ゲームデータ（localStorage）
+  var [data,setData]=useState(()=>{try{return JSON.parse(localStorage.getItem(SK)||"null")||INIT;}catch(e){return INIT;}});
+  // GQ ID（認証ベース）
+  var [gqId,setGqId]=useState("");
+  // UI
+  var [tab,setTab]=useState("log");
+  var [gorillaName,setGorillaName]=useState(()=>localStorage.getItem(NK)||"ゴリラ");
+  var [part,setPart]=useState("胸");
+  var [exercise,setExercise]=useState(PRESETS["胸"][0]);
+  var [weight,setWeight]=useState(60);
+  var [reps,setReps]=useState(10);
+  var [sets,setSets]=useState(3);
+  var [lvAnim,setLvAnim]=useState(null);
+  var [xpAnim,setXpAnim]=useState(null);
+  var [degradeAnim,setDegradeAnim]=useState(null);
+  var [showReset,setShowReset]=useState(false);
+  var [logMode,setLogMode]=useState("menu");
+  var [selMenu,setSelMenu]=useState(0);
+  var [editMenu,setEditMenu]=useState(null);
+  var [showNameEditor,setShowNameEditor]=useState(false);
+  var [showRoulette,setShowRoulette]=useState(false);
+  var [showBanana,setShowBanana]=useState(false);
+  var [xpMult,setXpMult]=useState(1);
+  var [checkIn,setCheckIn]=useState(()=>{try{var c=JSON.parse(localStorage.getItem(CK)||"null");return c&&(Date.now()-c.startTime<VALID_MS)?c:null;}catch(e){return null;}});
+  var [remaining,setRemaining]=useState(null);
+  var [menus,setMenus]=useState(()=>{try{return JSON.parse(localStorage.getItem(MK)||"null")||DEFAULT_MENUS;}catch(e){return DEFAULT_MENUS;}});
+  var [friends,setFriends]=useState(()=>{try{return JSON.parse(localStorage.getItem(FK)||"null")||[];}catch(e){return[];}});
+  var [friendSearch,setFriendSearch]=useState("");
+  var [friendResult,setFriendResult]=useState(null);
+  var [friendLoading,setFriendLoading]=useState(false);
+  var [friendDetails,setFriendDetails]=useState({});
+  var [battles,setBattles]=useState([]);
+  var timerRef=useRef(null);
+  var finalizedRef=useRef(new Set()); // 二重finalize防止
 
-  // ── ゲームデータ ──
-  var _d=useState(function(){try{return JSON.parse(localStorage.getItem(SK)||"null")||INIT;}catch(e){return INIT;}});
-  var data=_d[0];var setData=_d[1];
-  var _gqId=useState(function(){return getOrCreateGQId();});var gqId=_gqId[0];
-  var _tab=useState("log");var tab=_tab[0];var setTab=_tab[1];
-  var _gname=useState(function(){return localStorage.getItem(NK)||"ゴリラ";});var gorillaName=_gname[0];var setGorillaName=_gname[1];
-  var _pt=useState("胸");var part=_pt[0];var setPart=_pt[1];
-  var _ex=useState(PRESETS["胸"][0]);var exercise=_ex[0];var setExercise=_ex[1];
-  var _wt=useState(60);var weight=_wt[0];var setWeight=_wt[1];
-  var _rp=useState(10);var reps=_rp[0];var setReps=_rp[1];
-  var _st=useState(3);var sets=_st[0];var setSets=_st[1];
-  var _la=useState(null);var lvAnim=_la[0];var setLvAnim=_la[1];
-  var _xa=useState(null);var xpAnim=_xa[0];var setXpAnim=_xa[1];
-  var _da=useState(null);var degradeAnim=_da[0];var setDegradeAnim=_da[1];
-  var _sr=useState(false);var showReset=_sr[0];var setShowReset=_sr[1];
-  var _lm=useState("menu");var logMode=_lm[0];var setLogMode=_lm[1];
-  var _sm=useState(0);var selMenu=_sm[0];var setSelMenu=_sm[1];
-  var _em=useState(null);var editMenu=_em[0];var setEditMenu=_em[1];
-  var _ne=useState(false);var showNameEditor=_ne[0];var setShowNameEditor=_ne[1];
-  var _roulette=useState(null);var rouletteResult=_roulette[0];var setRouletteResult=_roulette[1];
-  var _showRoulette=useState(false);var showRoulette=_showRoulette[0];var setShowRoulette=_showRoulette[1];
-  var _showBanana=useState(false);var showBanana=_showBanana[0];var setShowBanana=_showBanana[1];
-  var _xpMult=useState(1);var xpMult=_xpMult[0];var setXpMult=_xpMult[1];
-  var _ci=useState(function(){try{var c=JSON.parse(localStorage.getItem(CK)||"null");return c&&(Date.now()-c.startTime<VALID_MS)?c:null;}catch(e){return null;}});
-  var checkIn=_ci[0];var setCheckIn=_ci[1];
-  var _rem=useState(null);var remaining=_rem[0];var setRemaining=_rem[1];
-  var _menus=useState(function(){try{return JSON.parse(localStorage.getItem(MK)||"null")||DEFAULT_MENUS;}catch(e){return DEFAULT_MENUS;}});
-  var menus=_menus[0];var setMenus=_menus[1];
-  var _friends=useState(function(){try{return JSON.parse(localStorage.getItem(FK)||"null")||[];}catch(e){return[];}});
-  var friends=_friends[0];var setFriends=_friends[1];
-  var _friendSearch=useState("");var friendSearch=_friendSearch[0];var setFriendSearch=_friendSearch[1];
-  var _friendResult=useState(null);var friendResult=_friendResult[0];var setFriendResult=_friendResult[1];
-  var _friendLoading=useState(false);var friendLoading=_friendLoading[0];var setFriendLoading=_friendLoading[1];
-  var _friendDetails=useState({});var friendDetails=_friendDetails[0];var setFriendDetails=_friendDetails[1];
-  // バトル
-  var _battles=useState([]);var battles=_battles[0];var setBattles=_battles[1];
-  var badgeQueue=useRef([]);var timerRef=useRef(null);
-
-  // ── 認証監視 ──
-  useEffect(function(){
-    var unsub=onAuthStateChanged(auth,async function(u){
+  // ── 認証監視 ──────────────────────────────────────────
+  useEffect(()=>{
+    return onAuthStateChanged(auth,async u=>{
       setAuthUser(u);
-      setAuthLoading(false);
       if(u){
-        // Firestoreにユーザードキュメントを同期
-        var gqid=getOrCreateGQId();
         var gname=localStorage.getItem(NK)||"ゴリラ";
-        await ensureUserDoc(u.uid,gname,gqid);
+        var ud=await ensureUserDoc(u.uid,gname);
+        setUserDoc(ud);
+        setGqId(ud.gqId||makeGQId(u.uid));
+        // gorillaNameをFirestoreに同期
+        if(ud.gorillaName&&ud.gorillaName!==gname){
+          setGorillaName(ud.gorillaName);
+          localStorage.setItem(NK,ud.gorillaName);
+        }
       }
+      setAuthLoading(false);
     });
-    return unsub;
   },[]);
 
-  // ── バトルリアルタイム監視 ──
-  useEffect(function(){
-    if(!gqId)return;
+  // ── バトルリアルタイム監視 ──────────────────────────
+  useEffect(()=>{
+    if(!authUser)return;
     var map={};
-    var q1=query(collection(db,"battles"),where("challengerGQId","==",gqId));
-    var q2=query(collection(db,"battles"),where("opponentGQId","==",gqId));
-    var order={active:0,pending:1,finished:2};
-    function refresh(){setBattles(Object.values(map).sort(function(a,b){return(order[a.status]??3)-(order[b.status]??3);}));}
-    var u1=onSnapshot(q1,function(s){s.docs.forEach(function(d){map[d.id]=Object.assign({id:d.id},d.data());});refresh();});
-    var u2=onSnapshot(q2,function(s){s.docs.forEach(function(d){map[d.id]=Object.assign({id:d.id},d.data());});refresh();});
-    return function(){u1();u2();};
-  },[gqId]);
+    var order={active:0,finished:1};
+    var refresh=()=>setBattles(Object.values(map).sort((a,b)=>(order[a.status]??2)-(order[b.status]??2)));
+    var u1=onSnapshot(query(collection(db,"battles"),where("challengerId","==",authUser.uid)),s=>{s.docs.forEach(d=>{map[d.id]={id:d.id,...d.data()};});refresh();});
+    var u2=onSnapshot(query(collection(db,"battles"),where("opponentId","==",authUser.uid)),s=>{s.docs.forEach(d=>{map[d.id]={id:d.id,...d.data()};});refresh();});
+    return()=>{u1();u2();};
+  },[authUser]);
 
-  // ── チェックインタイマー ──
-  useEffect(function(){
+  // Firestoreユーザードキュメントのリアルタイム監視（バナナ更新用）
+  useEffect(()=>{
+    if(!authUser)return;
+    return onSnapshot(doc(db,"users",authUser.uid),snap=>{if(snap.exists())setUserDoc(snap.data());});
+  },[authUser]);
+
+  // チェックインタイマー
+  useEffect(()=>{
     if(!checkIn){setRemaining(null);return;}
     function tick(){var left=checkIn.startTime+VALID_MS-Date.now();if(left<=0){setCheckIn(null);localStorage.removeItem(CK);setRemaining(null);return;}setRemaining(left);}
-    tick();timerRef.current=setInterval(tick,1000);return function(){clearInterval(timerRef.current);};
+    tick();timerRef.current=setInterval(tick,1000);return()=>clearInterval(timerRef.current);
   },[checkIn]);
 
-  // ── 退化チェック ──
-  useEffect(function(){
-    var lastDate=data.sessions&&data.sessions.length>0?data.sessions[data.sessions.length-1]:null;
+  // 退化チェック
+  useEffect(()=>{
+    var lastDate=data.sessions?.slice(-1)[0]||null;
     if(!lastDate)return;
     var penalty=calcDegradePenalty(lastDate);
-    if(penalty>0&&data.totalXP>0){var newXP=Math.max(0,data.totalXP-penalty);var newLevel=levelInfo(newXP).level;var d=Object.assign({},data,{totalXP:newXP,level:newLevel});save(d);setDegradeAnim(penalty);}
+    if(penalty>0&&data.totalXP>0){var newXP=Math.max(0,data.totalXP-penalty);save({...data,totalXP:newXP,level:levelInfo(newXP).level});setDegradeAnim(penalty);}
   },[]);
 
   // フレンドデータ取得
-  useEffect(function(){
+  useEffect(()=>{
     if(!friends.length)return;
-    friends.forEach(function(fid){
-      window.GQ&&window.GQ.searchUser&&window.GQ.searchUser(fid).then(function(res){
-        if(res)setFriendDetails(function(prev){var n=Object.assign({},prev);n[fid]=res;return n;});
-      });
+    friends.forEach(async fid=>{
+      try{
+        var q=query(collection(db,"users"),where("gqId","==",fid));
+        var snap=await getDocs(q);
+        if(!snap.empty)setFriendDetails(prev=>({...prev,[fid]:snap.docs[0].data()}));
+      }catch(e){}
     });
   },[friends]);
 
   var isActive=!!(checkIn&&(Date.now()-checkIn.startTime<VALID_MS));
 
-  useEffect(function(){var e=PRESETS[part][0];setExercise(e);setWeight((data.exercises[e]&&data.exercises[e].maxWeight)||60);},[part]);
-  useEffect(function(){setWeight((data.exercises[exercise]&&data.exercises[exercise].maxWeight)||60);},[exercise]);
+  useEffect(()=>{var e=PRESETS[part][0];setExercise(e);setWeight(data.exercises[e]?.maxWeight||60);},[part]);
+  useEffect(()=>{setWeight(data.exercises[exercise]?.maxWeight||60);},[exercise]);
 
-  var save=useCallback(function(d){
+  // ── save ──────────────────────────────────────────────
+  var save=useCallback((d)=>{
     setData(d);
     try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){}
     // Firestoreに同期
-    var gname=localStorage.getItem(NK)||"ゴリラ";
-    var gqid=getOrCreateGQId();
-    var lastTr=d.sessions&&d.sessions.length>0?d.sessions[d.sessions.length-1]:"なし";
     if(authUser){
-      setDoc(doc(db,"users",authUser.uid),{uid:authUser.uid,gorillaName:gname,gqId:gqid,xp:d.totalXP||0,level:d.level||1,partXP:d.partXP||{},maxStreak:d.maxStreak||0,totalSessions:d.totalSessions||0,lastTraining:lastTr,bananas:100},{merge:true}).catch(function(){});
+      var gname=localStorage.getItem(NK)||"ゴリラ";
+      var gqid=makeGQId(authUser.uid);
+      setDoc(doc(db,"users",authUser.uid),{
+        uid:authUser.uid,gqId:gqid,gorillaName:gname,
+        xp:d.totalXP||0,level:d.level||1,partXP:d.partXP||{},
+        maxStreak:d.maxStreak||0,totalSessions:d.totalSessions||0,
+        lastTraining:d.sessions?.slice(-1)[0]||"なし"
+      },{merge:true}).catch(()=>{});
+      // バトルスコア同期
+      syncBattleScore(authUser.uid,gqid,d.totalXP||0);
     }
-    // バトル中のXPを同期
-    syncBattleXP(gqid,d.totalXP||0);
   },[authUser]);
 
-  var saveMenus=useCallback(function(m){setMenus(m);try{localStorage.setItem(MK,JSON.stringify(m));}catch(e){};},[]);
-  var saveFriends=useCallback(function(f){setFriends(f);try{localStorage.setItem(FK,JSON.stringify(f));}catch(e){};},[]);
+  var saveMenus=m=>{setMenus(m);try{localStorage.setItem(MK,JSON.stringify(m));}catch(e){}};
+  var saveFriends=f=>{setFriends(f);try{localStorage.setItem(FK,JSON.stringify(f));}catch(e){}};
 
-  function handleProtein1(){
-    var xp=10;var np=Object.assign({},data.partXP);PARTS.forEach(function(p){np[p]=(np[p]||0)+2;});
-    var ntxp=data.totalXP+xp;var lv=levelInfo(ntxp).level;
-    save(Object.assign({},data,{totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+1}));
-    setXpAnim(xp);
-  }
-
-  function applyXPAndSave(d0,xpList,mult){
-    var today=getToday();var hour=getHour();mult=mult||1;
-    var d=Object.assign({},d0);
-    var ns=d.sessions.slice();var totalXP=d.totalXP;var partXP=Object.assign({},d.partXP);var exercises=Object.assign({},d.exercises);
-    var totalSets=d.totalSets||0;var maxWeight=d.maxWeight||0;var prCount=d.prCount||0;
-    var allXP=0;var logItems=[];
-    xpList.forEach(function(item){
-      var isNew=!exercises[item.exercise];var prevMax=(exercises[item.exercise]&&exercises[item.exercise].maxWeight)||0;
-      var isPR=item.weight>prevMax&&!isNew;var xp=item.sets*5;
+  // ── XP計算・記録 ──────────────────────────────────────
+  function applyXP(d0,xpList,mult=1){
+    var today=getToday(),hour=getHour();
+    var d={...d0},ns=[...d.sessions],totalXP=d.totalXP,partXP={...d.partXP},exercises={...d.exercises};
+    var totalSets=d.totalSets||0,maxWeight=d.maxWeight||0,prCount=d.prCount||0,allXP=0,logItems=[];
+    xpList.forEach(item=>{
+      var isNew=!exercises[item.exercise],prevMax=exercises[item.exercise]?.maxWeight||0,isPR=item.weight>prevMax&&!isNew;
+      var xp=item.sets*5;
       if(isNew)xp+=20;if(isPR)xp+=30;
       ns.push(today);var streak=getStreak(ns);
       if(streak>=3&&streak>getStreak(d.sessions))xp+=50;
-      xp=Math.round(xp*mult);
-      totalXP+=xp;allXP+=xp;
+      xp=Math.round(xp*mult);totalXP+=xp;allXP+=xp;
       partXP[item.part]=(partXP[item.part]||0)+(item.sets*5);
-      exercises[item.exercise]={maxWeight:Math.max(item.weight,prevMax),count:((exercises[item.exercise]&&exercises[item.exercise].count)||0)+1,part:item.part};
+      exercises[item.exercise]={maxWeight:Math.max(item.weight,prevMax),count:(exercises[item.exercise]?.count||0)+1,part:item.part};
       totalSets+=item.sets;maxWeight=Math.max(maxWeight,item.weight);if(isPR)prCount++;
-      logItems.push({exercise:item.exercise,part:item.part,weight:item.weight,reps:item.reps,sets:item.sets,xp:xp});
+      logItems.push({exercise:item.exercise,part:item.part,weight:item.weight,reps:item.reps,sets:item.sets,xp});
     });
-    var tds=ns.filter(function(x){return x===today;}).length;var streak=getStreak(ns);var lv=levelInfo(totalXP).level;
-    var wl=(d.workoutLog||[]).slice();
-    wl.unshift({date:today,time:new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"}),items:logItems,xp:allXP});
-    if(wl.length>20)wl=wl.slice(0,20);
-    d=Object.assign({},d,{totalXP:totalXP,partXP:partXP,exercises:exercises,sessions:ns,totalSessions:(d.totalSessions||0)+xpList.length,maxStreak:Math.max(d.maxStreak||0,streak),level:lv,prCount:prCount,totalSets:totalSets,maxWeight:maxWeight,maxDailySessions:Math.max(d.maxDailySessions||0,tds),workoutLog:wl,nightRecord:d.nightRecord||(hour>=0&&hour<5),morningRecord:d.morningRecord||(hour>=5&&hour<7),noonRecord:d.noonRecord||(hour>=12&&hour<13)});
-    return{d:d,allXP:allXP,prevLevel:levelInfo(d0.totalXP).level,newLevel:lv};
+    var tds=ns.filter(x=>x===today).length,streak=getStreak(ns),lv=levelInfo(totalXP).level;
+    var wl=[{date:today,time:new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"}),items:logItems,xp:allXP},...(d.workoutLog||[])].slice(0,20);
+    d={...d,totalXP,partXP,exercises,sessions:ns,totalSessions:(d.totalSessions||0)+xpList.length,maxStreak:Math.max(d.maxStreak||0,streak),level:lv,prCount,totalSets,maxWeight,maxDailySessions:Math.max(d.maxDailySessions||0,tds),workoutLog:wl,nightRecord:d.nightRecord||(hour>=0&&hour<5),morningRecord:d.morningRecord||(hour>=5&&hour<7),noonRecord:d.noonRecord||(hour>=12&&hour<13)};
+    return{d,allXP,prevLevel:levelInfo(d0.totalXP).level,newLevel:lv};
   }
 
-  function handleRecord(){
+  function recordAndSave(xpList){
     if(!isActive){alert("トレーニングを開始してください！");return;}
-    var result=applyXPAndSave(data,[{exercise:exercise,part:part,weight:weight,reps:reps,sets:sets}],xpMult);
-    save(result.d);setXpAnim(result.allXP);
-    if(result.newLevel>result.prevLevel)setTimeout(function(){setLvAnim(result.newLevel);},800);
+    var r=applyXP(data,xpList,xpMult);save(r.d);setXpAnim(r.allXP);
+    if(r.newLevel>r.prevLevel)setTimeout(()=>setLvAnim(r.newLevel),800);
   }
 
-  function handleMenuRecord(){
-    if(!isActive){alert("トレーニングを開始してください！");return;}
-    var menu=menus[selMenu];
-    var xpList=menu.items.map(function(item){return{exercise:item.exercise,part:getPartForExercise(item.exercise),weight:item.weight,reps:item.reps,sets:item.sets};});
-    var result=applyXPAndSave(data,xpList,xpMult);
-    result.d.menuRecords=(data.menuRecords||0)+1;
-    save(result.d);setXpAnim(result.allXP);
-    if(result.newLevel>result.prevLevel)setTimeout(function(){setLvAnim(result.newLevel);},800);
+  function handleProtein1(){
+    var xp=10,np={...data.partXP};PARTS.forEach(p=>{np[p]=(np[p]||0)+2;});
+    var ntxp=data.totalXP+xp,lv=levelInfo(ntxp).level;
+    save({...data,totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+1});setXpAnim(xp);
   }
 
   function onCheckIn(){
     var doRoulette=Math.random()<0.2;
-    var ci={startTime:Date.now()};
-    setCheckIn(ci);try{localStorage.setItem(CK,JSON.stringify(ci));}catch(e){}
-    var d=Object.assign({},data,{totalCheckIns:(data.totalCheckIns||0)+1});
-    save(d);
+    var ci={startTime:Date.now()};setCheckIn(ci);
+    try{localStorage.setItem(CK,JSON.stringify(ci));}catch(e){}
+    save({...data,totalCheckIns:(data.totalCheckIns||0)+1});
     if(doRoulette)setShowBanana(true);else setXpMult(1);
   }
 
   function handleReset(){save(INIT);setCheckIn(null);localStorage.removeItem(CK);setShowReset(false);}
 
-  // バトル申請
-  async function handleBattleRequest(targetGQId,targetName){
+  // ── バトル申請（即時開始） ────────────────────────────
+  async function handleBattleRequest(targetGQId,targetName,targetUid){
+    if(!authUser)return;
+    var gname=localStorage.getItem(NK)||"ゴリラ";
+    var now=new Date();
+    var endAt=new Date(now.getTime()+BATTLE_DURATION_MS);
     try{
-      var gname=localStorage.getItem(NK)||"ゴリラ";
       await addDoc(collection(db,"battles"),{
-        challengerGQId:gqId,challengerName:gname,
-        opponentGQId:targetGQId,opponentName:targetName,
-        status:"pending",startAt:null,endAt:null,
-        challengerXP:data.totalXP||0,opponentXP:0,
+        challengerId:authUser.uid,challengerGQId:gqId,challengerName:gname,
+        challengerBaseXP:data.totalXP||0,challengerScore:0,
+        opponentId:targetUid,opponentGQId:targetGQId,opponentName:targetName,
+        opponentBaseXP:0,opponentScore:0,
+        status:"active",
+        startAt:Timestamp.fromDate(now),endAt:Timestamp.fromDate(endAt),
         winnerId:null,createdAt:serverTimestamp()
       });
-      alert("たいせんをもうしこみました！");
-    }catch(e){alert("もうしこみに失敗しました");}
+      alert("バトルかいし！5ふんかけて！");
+    }catch(e){alert("バトル申請に失敗しました: "+e.message);}
   }
 
-  // バトル承認
-  async function handleAccept(battleId){
-    var now=new Date();
-    var endAt=new Date(now.getTime()+3*24*60*60*1000);
-    try{
-      await updateDoc(doc(db,"battles",battleId),{status:"active",startAt:Timestamp.fromDate(now),endAt:Timestamp.fromDate(endAt)});
-    }catch(e){alert("しょうにんに失敗しました");}
+  // バトル終了処理（クライアント側で検知）
+  async function handleFinalize(battleId,battle){
+    if(finalizedRef.current.has(battleId))return;
+    finalizedRef.current.add(battleId);
+    await finalizeBattle(battleId,battle);
   }
 
-  // フレンド検索
+  // フレンド検索（gqIdで検索）
   async function handleFriendSearch(){
     if(!friendSearch.trim())return;
     setFriendLoading(true);setFriendResult(null);
     try{
-      // gqIdで検索
       var q=query(collection(db,"users"),where("gqId","==",friendSearch.trim()));
       var snap=await getDocs(q);
-      if(!snap.empty){
-        var d=snap.docs[0].data();
-        setFriendResult(Object.assign({},d,{docId:snap.docs[0].id}));
-      }else{setFriendResult("notfound");}
+      if(!snap.empty){var d=snap.docs[0].data();setFriendResult({...d,docId:snap.docs[0].id});}
+      else setFriendResult("notfound");
     }catch(e){setFriendResult("notfound");}
     setFriendLoading(false);
   }
 
   function addFriend(fid,fd){
-    if(friends.indexOf(fid)>=0)return;
-    saveFriends(friends.concat([fid]));
-    setFriendDetails(function(prev){var n=Object.assign({},prev);n[fid]=fd;return n;});
+    if(friends.includes(fid))return;
+    saveFriends([...friends,fid]);
+    setFriendDetails(prev=>({...prev,[fid]:fd}));
     setFriendResult(null);setFriendSearch("");
   }
-  function removeFriend(fid){saveFriends(friends.filter(function(x){return x!==fid;}));}
+  function removeFriend(fid){saveFriends(friends.filter(x=>x!==fid));}
+
+  // 同じペアのアクティブバトルを検索
+  function getActiveBattle(friendGQId){
+    return battles.find(b=>b.status==="active"&&((b.challengerGQId===gqId&&b.opponentGQId===friendGQId)||(b.opponentGQId===gqId&&b.challengerGQId===friendGQId)));
+  }
 
   var li=levelInfo(data.totalXP||0);var level=li.level,current=li.current,needed=li.needed;
   var stage=getStage(level);
-  var lastDate=data.sessions&&data.sessions.length>0?data.sessions[data.sessions.length-1]:null;
+  var lastDate=data.sessions?.slice(-1)[0]||null;
   var degradeDays=lastDate?daysDiff(lastDate,getToday()):0;
   var isDegrading=degradeDays>=3;
 
   function ts(t){return{flex:1,padding:"9px 0",border:"none",cursor:"pointer",fontSize:12,fontFamily:"'DotGothic16',monospace",background:tab===t?"rgba(92,184,122,0.18)":"rgba(255,255,255,0.05)",color:tab===t?"#5cb87a":"#aaa",boxShadow:tab===t?"inset 0 2px 4px rgba(0,0,0,0.3)":"inset 0 1px 3px rgba(0,0,0,0.2)",transition:"all 0.15s"};}
 
-  // ── ローディング ──
   if(authLoading)return h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",color:"#ffdd00",fontSize:14,fontFamily:"'DotGothic16',monospace"}},"ロード中...");
-
-  // ── ログイン画面 ──
   if(!authUser)return h(LoginScreen,null);
 
-  // ── メイン ──
   return h("div",{style:{maxWidth:430,margin:"0 auto",padding:"10px 12px",background:"#0a0a1a",minHeight:"100vh"}},
-    showBanana?h(BananaSwipe,{onSlide:function(){setShowBanana(false);setShowRoulette(true);}}):null,
-    showRoulette?h(RouletteOverlay,{onResult:function(r){setRouletteResult(r);setXpMult(r.mult);setShowRoulette(false);}}):null,
-    editMenu!==null?h(MenuEditor,{menu:menus[editMenu],onSave:function(m){var nm=menus.map(function(x,i){return i===editMenu?m:x;});saveMenus(nm);setEditMenu(null);},onClose:function(){setEditMenu(null);}}):null,
-    showNameEditor?h(NameEditor,{current:gorillaName,onSave:function(n){setGorillaName(n);localStorage.setItem(NK,n);setShowNameEditor(false);save(data);},onClose:function(){setShowNameEditor(false);}}):null,
-    xpAnim?h(XPPop,{xp:xpAnim,onDone:function(){setXpAnim(null);}}):null,
-    lvAnim?h(LevelUpOverlay,{level:lvAnim,onDone:function(){setLvAnim(null);}}):null,
-    degradeAnim?h(DegradePop,{xp:degradeAnim,onDone:function(){setDegradeAnim(null);}}):null,
+    showBanana?h(BananaSwipe,{onSlide:()=>{setShowBanana(false);setShowRoulette(true);}}):null,
+    showRoulette?h(RouletteOverlay,{onResult:r=>{setXpMult(r.mult);setShowRoulette(false);}}):null,
+    editMenu!==null?h(MenuEditor,{menu:menus[editMenu],onSave:m=>{setMenus(menus.map((x,i)=>i===editMenu?m:x));saveMenus(menus.map((x,i)=>i===editMenu?m:x));setEditMenu(null);},onClose:()=>setEditMenu(null)}):null,
+    showNameEditor?h(NameEditor,{current:gorillaName,onSave:n=>{setGorillaName(n);localStorage.setItem(NK,n);if(authUser)updateDoc(doc(db,"users",authUser.uid),{gorillaName:n}).catch(()=>{});setShowNameEditor(false);},onClose:()=>setShowNameEditor(false)}):null,
+    xpAnim?h(XPPop,{xp:xpAnim,onDone:()=>setXpAnim(null)}):null,
+    lvAnim?h(LevelUpOverlay,{level:lvAnim,onDone:()=>setLvAnim(null)}):null,
+    degradeAnim?h(DegradePop,{xp:degradeAnim,onDone:()=>setDegradeAnim(null)}):null,
 
     // タイトル
     h("div",{style:{textAlign:"center",marginBottom:8}},
@@ -601,19 +599,22 @@ function App(){
       h("div",{style:{fontSize:11,color:"#aaa"}},STAGE_LABELS[stage]),
       h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4}},
         h("div",{style:{fontSize:10,color:"#4488ff"}},"ID: "+gqId),
-        h("button",{onClick:function(){if(navigator.clipboard)navigator.clipboard.writeText(gqId).then(function(){alert("コピーしました！");});},style:{background:"none",border:"1px solid #4444aa",color:"#4488ff",fontSize:9,padding:"2px 6px",cursor:"pointer",fontFamily:"'DotGothic16',monospace"}},"コピー"),
-        h("button",{onClick:function(){signOut(auth);},style:{background:"none",border:"1px solid #555",color:"#aaa",fontSize:9,padding:"2px 6px",cursor:"pointer",fontFamily:"'DotGothic16',monospace"}},"ログアウト")
+        h("button",{onClick:()=>navigator.clipboard?.writeText(gqId).then(()=>alert("コピーしました！")),style:{background:"none",border:"1px solid #4444aa",color:"#4488ff",fontSize:9,padding:"2px 6px",cursor:"pointer",fontFamily:"'DotGothic16',monospace"}},"コピー"),
+        h("button",{onClick:()=>signOut(auth),style:{background:"none",border:"1px solid #555",color:"#aaa",fontSize:9,padding:"2px 6px",cursor:"pointer",fontFamily:"'DotGothic16',monospace"}},"ログアウト")
       )
     ),
 
     // アバター
     h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
       h("div",{style:{display:"flex",gap:12,alignItems:"flex-start"}},
-        h("div",{style:{flexShrink:0,width:90,height:90,display:"flex",flexDirection:"column",alignItems:"center",position:"relative"}},
+        h("div",{style:{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center"}},
           h("div",{style:{width:90,height:90,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}},
-            h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],style:{width:180,height:180,objectFit:"contain",imageRendering:"pixelated"},onError:function(e){e.target.style.display="none";}})
+            h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],style:{width:180,height:180,objectFit:"contain",imageRendering:"pixelated"},onError:e=>{e.target.style.display="none";}})
           ),
-          h("a",{href:"https://www.mtgec.jp/shop/pages/refa_bubble_u.aspx",target:"_blank",style:{display:"block",marginTop:2,background:"#fff",color:"#000033",fontSize:8,padding:"2px 5px",borderRadius:4,border:"2px solid #ffdd00",cursor:"pointer",textDecoration:"none",lineHeight:1.3,textAlign:"center",maxWidth:90,position:"relative"}},
+          // バナナ表示
+          h("div",{style:{marginTop:4,fontSize:12,color:"#ffaa44",textAlign:"center"}},"🍌 "+(userDoc?.bananas??100)),
+          // 吹き出し広告
+          h("a",{href:"https://www.mtgec.jp/shop/pages/refa_bubble_u.aspx",target:"_blank",style:{display:"block",marginTop:2,background:"#fff",color:"#000033",fontSize:8,padding:"2px 5px",borderRadius:4,border:"2px solid #ffdd00",textDecoration:"none",lineHeight:1.3,textAlign:"center",maxWidth:90,position:"relative"}},
             "汗の放置は甘えだ",h("span",{style:{fontSize:7,color:"#888"}},"[PR]"),
             h("div",{style:{position:"absolute",top:-5,left:"50%",transform:"translateX(-50%)",width:0,height:0,borderLeft:"4px solid transparent",borderRight:"4px solid transparent",borderBottom:"5px solid #ffdd00"}})
           )
@@ -622,7 +623,7 @@ function App(){
           h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}},
             h("div",{style:{display:"flex",alignItems:"center",gap:4}},
               h("div",{style:{fontSize:13,color:"#ffdd00"}},gorillaName+" LV"+level),
-              h("button",{onClick:function(){setShowNameEditor(true);},style:{background:"none",border:"none",cursor:"pointer",fontSize:12,padding:"0 2px",color:"#aaa"}},"✏️")
+              h("button",{onClick:()=>setShowNameEditor(true),style:{background:"none",border:"none",cursor:"pointer",fontSize:12,padding:"0 2px",color:"#aaa"}},"✏️")
             ),
             h("button",{onClick:handleProtein1,style:{background:"none",border:"none",cursor:"pointer",fontSize:20,padding:"0 2px"}},"🥤")
           ),
@@ -630,7 +631,7 @@ function App(){
           h("div",{style:{fontSize:10,color:"#aaa",marginTop:1,marginBottom:4}},current+"/"+needed+" XP"),
           isDegrading?h("div",{style:{fontSize:10,color:"#ff4444",marginBottom:4,animation:"pulse 1s infinite"}},"⚠ "+degradeDays+"日さぼり中！"):null,
           h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 4px"}},
-            PARTS.map(function(p){var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:2,minWidth:0}},h("span",{style:{fontSize:9,color:PART_COLOR[p],width:18,flexShrink:0}},p),h("div",{style:{flex:1,height:10,background:"#001100",border:"1px solid #336633",minWidth:0,overflow:"hidden"}},h("div",{style:{height:"100%",width:Math.min(Math.round((pi.current/pi.needed)*100),100)+"%",background:PART_COLOR[p],transition:"width 0.4s"}})),h("span",{style:{fontSize:9,color:"#aaa",width:18,flexShrink:0,textAlign:"right"}},"L"+pi.level));})
+            PARTS.map(p=>{var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:2,minWidth:0}},h("span",{style:{fontSize:9,color:PART_COLOR[p],width:18,flexShrink:0}},p),h("div",{style:{flex:1,height:10,background:"#001100",border:"1px solid #336633",minWidth:0,overflow:"hidden"}},h("div",{style:{height:"100%",width:Math.min(Math.round((pi.current/pi.needed)*100),100)+"%",background:PART_COLOR[p],transition:"width 0.4s"}})),h("span",{style:{fontSize:9,color:"#aaa",width:18,flexShrink:0,textAlign:"right"}},"L"+pi.level));})
           )
         )
       )
@@ -649,110 +650,109 @@ function App(){
 
     // タブ
     h("div",{style:{display:"flex",gap:2,marginBottom:8,background:"rgba(0,0,0,0.3)"}},
-      [["log","▶ きろく"],["history","▶ れきし"],["friends","▶ ともだち"]].map(function(item){return h("button",{key:item[0],style:ts(item[0]),onClick:function(){setTab(item[0]);}},item[1]);})
+      [["log","▶ きろく"],["history","▶ れきし"],["friends","▶ ともだち"]].map(item=>h("button",{key:item[0],style:ts(item[0]),onClick:()=>setTab(item[0])},item[1]))
     ),
 
-    // ── LOG ──
+    // ── LOG ──────────────────────────────────────────────
     tab==="log"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
       !isActive?h("div",{style:{padding:"10px",textAlign:"center",color:"#ff4444",fontSize:11,background:"#110000",border:"2px solid #ff4444"}},"トレーニングを開始してから記録できます"):null,
       h("div",{style:{display:"flex",gap:4}},
-        h("button",{className:"dq-btn "+(logMode==="menu"?"active":""),onClick:function(){setLogMode("menu");},style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ メニューきろく"),
-        h("button",{className:"dq-btn "+(logMode==="single"?"active":""),onClick:function(){setLogMode("single");},style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ たんどくきろく")
+        h("button",{className:"dq-btn "+(logMode==="menu"?"active":""),onClick:()=>setLogMode("menu"),style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ メニューきろく"),
+        h("button",{className:"dq-btn "+(logMode==="single"?"active":""),onClick:()=>setLogMode("single"),style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ たんどくきろく")
       ),
       logMode==="single"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
         h("div",{className:"dq-win",style:{padding:"10px 12px"}},
           h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ぶいをえらぶ"),
-          h("div",{style:{display:"flex",gap:3,marginBottom:12}},PARTS.map(function(p){return h("button",{key:p,className:"dq-btn "+(part===p?"active":""),onClick:function(){setPart(p);},style:{flex:1,fontSize:11,padding:"5px 2px",textAlign:"center",color:part===p?PART_COLOR[p]:"#aaa",borderBottom:part===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p);})),
+          h("div",{style:{display:"flex",gap:3,marginBottom:12}},PARTS.map(p=>h("button",{key:p,className:"dq-btn "+(part===p?"active":""),onClick:()=>setPart(p),style:{flex:1,fontSize:11,padding:"5px 2px",textAlign:"center",color:part===p?PART_COLOR[p]:"#aaa",borderBottom:part===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p))),
           h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ しゅもくをえらぶ"),
-          h("select",{className:"dq-input",value:exercise,onChange:function(e){setExercise(e.target.value);},style:{width:"100%",fontSize:13,marginBottom:12}},PRESETS[part].map(function(e){return h("option",{key:e,value:e},e);})),
+          h("select",{className:"dq-input",value:exercise,onChange:e=>setExercise(e.target.value),style:{width:"100%",fontSize:13,marginBottom:12}},PRESETS[part].map(e=>h("option",{key:e,value:e},e))),
           h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
-            [["じゅうりょう","kg",weight,setWeight,5,0],["かいすう","かい",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(function(f){return h("div",{key:f[0]},h("div",{style:{fontSize:10,color:"#aaa",marginBottom:4,textAlign:"center"}},f[0]),h(Stepper,{value:f[2],onChange:f[3],step:f[4],min:f[5]}),h("div",{style:{textAlign:"center",fontSize:11,marginTop:2,color:"#aaa"}},f[2]+f[1]));})
+            [["じゅうりょう","kg",weight,setWeight,5,0],["かいすう","かい",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(f=>h("div",{key:f[0]},h("div",{style:{fontSize:10,color:"#aaa",marginBottom:4,textAlign:"center"}},f[0]),h(Stepper,{value:f[2],onChange:f[3],step:f[4],min:f[5]}),h("div",{style:{textAlign:"center",fontSize:11,marginTop:2,color:"#aaa"}},f[2]+f[1])))
           )
         ),
-        h("button",{className:"dq-btn",onClick:handleRecord,style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ きろくする")
+        h("button",{className:"dq-btn",onClick:()=>recordAndSave([{exercise,part,weight,reps,sets}]),style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ きろくする")
       ):null,
       logMode==="menu"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-        h("div",{style:{display:"flex",gap:3}},menus.map(function(m,i){return h("button",{key:i,className:"dq-btn "+(selMenu===i?"active":""),onClick:function(){setSelMenu(i);},style:{flex:1,textAlign:"center",fontSize:11,padding:"7px 2px"}},m.name);})),
+        h("div",{style:{display:"flex",gap:3}},menus.map((m,i)=>h("button",{key:i,className:"dq-btn "+(selMenu===i?"active":""),onClick:()=>setSelMenu(i),style:{flex:1,textAlign:"center",fontSize:11,padding:"7px 2px"}},m.name))),
         h("div",{className:"dq-win",style:{padding:"10px 12px"}},
-          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},h("div",{style:{fontSize:12,color:"#ffdd00"}},menus[selMenu].name),h("button",{className:"dq-btn",onClick:function(){setEditMenu(selMenu);},style:{fontSize:11,padding:"4px 8px",color:"#aaa",border:"1px solid #4444aa"}},"へんしゅう")),
-          menus[selMenu].items.map(function(item,i){return h("div",{key:i,style:{display:"flex",justifyContent:"space-between",fontSize:12,borderBottom:i<menus[selMenu].items.length-1?"1px solid #111144":"none",padding:"5px 0"}},h("div",null,h("span",{style:{color:PART_COLOR[getPartForExercise(item.exercise)]||"#aaa"}},getPartForExercise(item.exercise)),h("span",{style:{color:"#fff",marginLeft:6}},item.exercise)),h("span",{style:{color:"#aaa",fontSize:11}},item.weight+"kg "+item.reps+"回 "+item.sets+"set"));})
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},h("div",{style:{fontSize:12,color:"#ffdd00"}},menus[selMenu].name),h("button",{className:"dq-btn",onClick:()=>setEditMenu(selMenu),style:{fontSize:11,padding:"4px 8px",color:"#aaa",border:"1px solid #4444aa"}},"へんしゅう")),
+          menus[selMenu].items.map((item,i)=>h("div",{key:i,style:{display:"flex",justifyContent:"space-between",fontSize:12,borderBottom:i<menus[selMenu].items.length-1?"1px solid #111144":"none",padding:"5px 0"}},h("div",null,h("span",{style:{color:PART_COLOR[getPartForEx(item.exercise)]||"#aaa"}},getPartForEx(item.exercise)),h("span",{style:{color:"#fff",marginLeft:6}},item.exercise)),h("span",{style:{color:"#aaa",fontSize:11}},item.weight+"kg "+item.reps+"回 "+item.sets+"set")))
         ),
-        h("button",{className:"dq-btn",onClick:handleMenuRecord,style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ メニューをきろくする（"+menus[selMenu].items.length+"しゅもく）")
+        h("button",{className:"dq-btn",onClick:()=>recordAndSave(menus[selMenu].items.map(item=>({exercise:item.exercise,part:getPartForEx(item.exercise),weight:item.weight,reps:item.reps,sets:item.sets}))),style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ メニューをきろくする（"+menus[selMenu].items.length+"しゅもく）")
       ):null
     ):null,
 
-    // ── HISTORY ──
+    // ── HISTORY ──────────────────────────────────────────
     tab==="history"?h("div",null,
       h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
         h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
-          [["そうセッション",data.totalSessions||0,"かい"],["さいちょうれんぞく",data.maxStreak||0,"にち"],["しゅもくすう",Object.keys(data.exercises||{}).length,"しゅ"],["プロテイン",data.totalProtein||0,"ぱい"],["さいだいじゅうりょう",data.maxWeight||0,"kg"],["チェックイン",data.totalCheckIns||0,"かい"]].map(function(it){return h("div",{key:it[0],style:{borderBottom:"1px solid #111144",paddingBottom:6}},h("div",{style:{fontSize:10,color:"#aaa"}},it[0]),h("div",{style:{fontSize:18,color:"#ffdd00"}},it[1],h("span",{style:{fontSize:11,color:"#aaa"}},it[2])));})
+          [["そうセッション",data.totalSessions||0,"かい"],["さいちょうれんぞく",data.maxStreak||0,"にち"],["しゅもくすう",Object.keys(data.exercises||{}).length,"しゅ"],["プロテイン",data.totalProtein||0,"ぱい"],["さいだいじゅうりょう",data.maxWeight||0,"kg"],["バナナ",userDoc?.bananas??100,"🍌"]].map(it=>h("div",{key:it[0],style:{borderBottom:"1px solid #111144",paddingBottom:6}},h("div",{style:{fontSize:10,color:"#aaa"}},it[0]),h("div",{style:{fontSize:18,color:"#ffdd00"}},it[1],h("span",{style:{fontSize:11,color:"#aaa"}},it[2]))))
         )
       ),
       h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
         h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ ぶいべつレベル"),
-        PARTS.map(function(p){var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{marginBottom:8}},h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}},h("span",{style:{color:PART_COLOR[p]}},p+" Lv."+pi.level),h("span",{style:{color:"#aaa"}},pi.current+"/"+pi.needed)),h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p]}));})
+        PARTS.map(p=>{var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{marginBottom:8}},h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}},h("span",{style:{color:PART_COLOR[p]}},p+" Lv."+pi.level),h("span",{style:{color:"#aaa"}},pi.current+"/"+pi.needed)),h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p]}));})
       ),
       Object.keys(data.exercises||{}).length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
         h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ しゅもくベスト"),
-        Object.entries(data.exercises||{}).map(function(e){return h("div",{key:e[0],style:{display:"flex",justifyContent:"space-between",fontSize:12,borderBottom:"1px solid #111144",padding:"4px 0"}},h("div",null,h("span",{style:{color:"#fff"}},e[0]),h("span",{style:{fontSize:10,marginLeft:6,color:PART_COLOR[e[1].part]||"#aaa"}},e[1].part)),h("span",{style:{color:"#aaa"}},e[1].maxWeight+"kg × "+e[1].count+"回"));})
+        Object.entries(data.exercises||{}).map(([name,e])=>h("div",{key:name,style:{display:"flex",justifyContent:"space-between",fontSize:12,borderBottom:"1px solid #111144",padding:"4px 0"}},h("div",null,h("span",{style:{color:"#fff"}},name),h("span",{style:{fontSize:10,marginLeft:6,color:PART_COLOR[e.part]||"#aaa"}},e.part)),h("span",{style:{color:"#aaa"}},e.maxWeight+"kg × "+e.count+"回")))
       ):null,
       h("div",{style:{marginTop:8,marginBottom:8}},
-        !showReset?h("button",{className:"dq-btn",onClick:function(){setShowReset(true);},style:{width:"100%",textAlign:"center",fontSize:12,padding:"10px",border:"2px solid #ff4444",color:"#ff4444"}},"▶ データをぜんぶけす"):
-        h("div",{className:"dq-win",style:{padding:"10px 12px",border:"3px solid #ff4444"}},h("div",{style:{fontSize:13,color:"#ff4444",marginBottom:10,textAlign:"center"}},"ほんとうにぜんぶけしますか？"),h("div",{style:{display:"flex",gap:8}},h("button",{className:"dq-btn",onClick:handleReset,style:{flex:1,textAlign:"center",color:"#ff4444",border:"2px solid #ff4444",fontSize:13,padding:"10px"}},"▶ はい"),h("button",{className:"dq-btn",onClick:function(){setShowReset(false);},style:{flex:1,textAlign:"center",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13,padding:"10px"}},"▶ いいえ")))
+        !showReset?h("button",{className:"dq-btn",onClick:()=>setShowReset(true),style:{width:"100%",textAlign:"center",fontSize:12,padding:"10px",border:"2px solid #ff4444",color:"#ff4444"}},"▶ データをぜんぶけす"):
+        h("div",{className:"dq-win",style:{padding:"10px 12px",border:"3px solid #ff4444"}},h("div",{style:{fontSize:13,color:"#ff4444",marginBottom:10,textAlign:"center"}},"ほんとうにぜんぶけしますか？"),h("div",{style:{display:"flex",gap:8}},h("button",{className:"dq-btn",onClick:handleReset,style:{flex:1,textAlign:"center",color:"#ff4444",border:"2px solid #ff4444",fontSize:13,padding:"10px"}},"▶ はい"),h("button",{className:"dq-btn",onClick:()=>setShowReset(false),style:{flex:1,textAlign:"center",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13,padding:"10px"}},"▶ いいえ")))
       ),
-      (data.workoutLog&&data.workoutLog.length>0)?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+      data.workoutLog?.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
         h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ トレーニングりれき"),
-        data.workoutLog.map(function(log,i){return h("div",{key:i,style:{display:"flex",gap:8,alignItems:"flex-start",borderBottom:i<data.workoutLog.length-1?"1px solid #111144":"none",paddingBottom:8,marginBottom:8}},
-          h("div",{style:{flex:1,minWidth:0}},h("div",{style:{fontSize:11,color:"#ffdd00"}},log.date+" "+log.time),(log.items||[]).map(function(it,j){return h("div",{key:j,style:{fontSize:11,color:"#ccc",marginTop:2}},h("span",{style:{color:PART_COLOR[it.part]||"#aaa"}},it.part)," "+it.exercise+" "+it.weight+"kg×"+it.reps+"×"+it.sets+"set");}),h("div",{style:{fontSize:11,color:"#44ff44",marginTop:2}},"+"+log.xp+"XP"))
-        );})
+        data.workoutLog.map((log,i)=>h("div",{key:i,style:{borderBottom:i<data.workoutLog.length-1?"1px solid #111144":"none",paddingBottom:8,marginBottom:8}},h("div",{style:{fontSize:11,color:"#ffdd00"}},log.date+" "+log.time),(log.items||[]).map((it,j)=>h("div",{key:j,style:{fontSize:11,color:"#ccc",marginTop:2}},h("span",{style:{color:PART_COLOR[it.part]||"#aaa"}},it.part)," "+it.exercise+" "+it.weight+"kg×"+it.reps+"×"+it.sets+"set")),h("div",{style:{fontSize:11,color:"#44ff44",marginTop:2}},"+"+log.xp+"XP")))
       ):null
     ):null,
 
-    // ── FRIENDS + BATTLE ──
+    // ── FRIENDS + BATTLE ─────────────────────────────────
     tab==="friends"?h("div",null,
       // 自分のID
       h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
         h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ じぶんのID"),
         h("div",{style:{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}},
           h("div",{style:{fontSize:14,color:"#4488ff",letterSpacing:2}},gqId),
-          h("button",{className:"dq-btn",onClick:function(){if(navigator.clipboard)navigator.clipboard.writeText(gqId).then(function(){alert("コピーしました！");});},style:{fontSize:11,padding:"4px 10px",color:"#ffdd00",border:"1px solid #ffdd00"}},"コピー")
+          h("button",{className:"dq-btn",onClick:()=>navigator.clipboard?.writeText(gqId).then(()=>alert("コピーしました！")),style:{fontSize:11,padding:"4px 10px",color:"#ffdd00",border:"1px solid #ffdd00"}},"コピー")
         ),
         h("div",{style:{fontSize:10,color:"#666688",textAlign:"center",marginTop:4}},"このIDをともだちにおしえよう")
       ),
       // バトル一覧
       battles.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
         h("div",{style:{fontSize:11,color:"#ff6666",marginBottom:8}},"▼ ⚔ バトル"),
-        battles.map(function(b){return h(BattleCard,{key:b.id,battle:b,currentGQId:gqId,onAccept:handleAccept});})
+        battles.map(b=>h(BattleCard,{key:b.id,battle:b,currentUid:authUser?.uid,onFinalize:handleFinalize}))
       ):null,
-      // ユーザー検索
+      // フレンド検索
       h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ともだち・たいせんあいてをけんさく"),
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ともだちをけんさく"),
         h("div",{style:{display:"flex",gap:6,marginBottom:8}},
-          h("input",{className:"dq-input",value:friendSearch,onChange:function(e){setFriendSearch(e.target.value);},onCompositionEnd:function(e){setFriendSearch(e.target.value);},placeholder:"GQ-XXXXXX",style:{flex:1,fontSize:13}}),
+          h("input",{className:"dq-input",value:friendSearch,onChange:e=>setFriendSearch(e.target.value),onCompositionEnd:e=>setFriendSearch(e.target.value),placeholder:"GQ-XXXXXX",style:{flex:1,fontSize:13}}),
           h("button",{className:"dq-btn",onClick:handleFriendSearch,style:{padding:"6px 12px",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:12}},friendLoading?"…":"けんさく")
         ),
         friendResult&&friendResult!=="notfound"?h("div",{className:"dq-win",style:{padding:"10px",borderColor:"#4488ff"}},
           h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
-            h("div",null,
-              h("div",{style:{fontSize:13,color:"#ffdd00"}},friendResult.gorillaName||"ゴリラ"),
-              h("div",{style:{fontSize:11,color:"#aaa"}},"LV"+(friendResult.level||1)+" / さいきん: "+(friendResult.lastTraining||"なし"))
-            ),
-            h("div",{style:{display:"flex",flexDirection:"column",gap:4}},
-              h("button",{className:"dq-btn",onClick:function(){addFriend(friendResult.gqId,friendResult);},style:{fontSize:11,padding:"4px 8px",color:"#44ff44",border:"1px solid #44ff44"}},"＋ともだち"),
-              h("button",{className:"dq-btn",onClick:function(){handleBattleRequest(friendResult.gqId,friendResult.gorillaName||"ゴリラ");},style:{fontSize:11,padding:"4px 8px",color:"#ff6666",border:"1px solid #ff6666"}},"⚔ たいせん")
-            )
+            h("div",null,h("div",{style:{fontSize:13,color:"#ffdd00"}},friendResult.gorillaName||"ゴリラ"),h("div",{style:{fontSize:11,color:"#aaa"}},"LV"+(friendResult.level||1))),
+            // 検索結果には「＋ついか」のみ
+            h("button",{className:"dq-btn",onClick:()=>addFriend(friendResult.gqId,friendResult),style:{fontSize:12,padding:"6px 10px",color:"#44ff44",border:"2px solid #44ff44"}},"＋ついか")
           ),
-          h("div",{style:{display:"flex",justifyContent:"center"}},h(PentagonChart,{partXP:friendResult.partXP,size:150}))
+          h("div",{style:{display:"flex",justifyContent:"center"}},h(PentagonChart,{partXP:friendResult.partXP||{},size:150}))
         ):null,
         friendResult==="notfound"?h("div",{style:{fontSize:12,color:"#ff4444"}},"みつかりませんでした"):null
       ),
-      // フレンドリスト
+      // フレンドリスト（たいせんボタン付き）
       friends.length>0?h("div",null,
         h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ともだちリスト ("+friends.length+"人)"),
-        friends.map(function(fid){
+        friends.map(fid=>{
           var fd=friendDetails[fid];
           if(!fd)return h("div",{key:fid,className:"dq-win",style:{padding:"10px",marginBottom:8,color:"#aaa",fontSize:12}},"ID: "+fid+" (よみこみ中...)");
-          return h(FriendCard,{key:fid,fd:fd,fid:fid,onRemove:function(){removeFriend(fid);}});
+          var activeBattle=getActiveBattle(fid);
+          return h(FriendCard,{
+            key:fid,fd:fd,fid:fid,
+            onRemove:()=>removeFriend(fid),
+            battleStatus:activeBattle?"active":null,
+            onBattle:()=>handleBattleRequest(fid,fd.gorillaName||"ゴリラ",fd.uid)
+          });
         })
       ):h("div",{style:{textAlign:"center",color:"#aaa",fontSize:12,padding:20}},"まだともだちがいません")
     ):null,
