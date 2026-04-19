@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Gorilla Quest - バトル</title>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#0a0a1a;color:#fff;font-family:'DotGothic16',monospace;min-height:100vh;}
+button,input{font-family:'DotGothic16',monospace;}
+.dq-win{background:#000033;border:3px solid #fff;box-shadow:inset 0 0 0 1px #000066;}
+.dq-btn{background:#000033;border:2px solid #fff;color:#fff;cursor:pointer;padding:8px 12px;font-size:14px;transition:background 0.1s;font-family:'DotGothic16',monospace;}
+.dq-btn:hover{background:#000066;}
+.dq-input{background:#000011;border:2px solid #4444aa;color:#fff;font-family:'DotGothic16',monospace;font-size:13px;padding:6px 8px;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+@keyframes countdown{0%{transform:scale(1)}50%{transform:scale(1.05)}100%{transform:scale(1)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module">
+// ============================================
+// Firebase のインポート
+// ============================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
+import {
+  getAuth,
+  signInAnonymously,
+  signInWithPopup,
+  GoogleAuthProvider,
+  linkWithPopup,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
+import {
+  getFirestore,
+  doc, getDoc, setDoc, updateDoc, addDoc,
+  collection, query, where, onSnapshot,
+  serverTimestamp, Timestamp
+} from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+
+// ============================================
+// Firebase 初期化
+// ============================================
+const firebaseConfig = {
+  apiKey: "AIzaSyChzYzgoK-k0Yk9ftiY7vMOeHDpYEOeDlw",
+  authDomain: "gorilla-quest-b189c.firebaseapp.com",
+  projectId: "gorilla-quest-b189c",
+  storageBucket: "gorilla-quest-b189c.firebasestorage.app",
+  messagingSenderId: "581762660070",
+  appId: "1:581762660070:web:803c2a77a9341b4c89ad27"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ============================================
+// ユーティリティ関数
+// ============================================
+
+// ランダムなゴリラ名を生成
+const GORILLA_NAMES = ["モンキーD","キングコング","ゴリ丸","シルバーバック","ゴリラ将軍","マッスルゴリラ","ゴリラ帝王","ゴリゴリ","超ゴリラ","ゴリラ最強"];
+function randomName() {
+  return GORILLA_NAMES[Math.floor(Math.random() * GORILLA_NAMES.length)] + Math.floor(Math.random() * 100);
+}
+
+// 残り時間をフォーマット
+function formatCountdown(endAt) {
+  if (!endAt) return "--:--:--";
+  const now = Date.now();
+  const end = endAt.toDate ? endAt.toDate().getTime() : endAt;
+  const diff = Math.max(0, end - now);
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  if (d > 0) return `${d}日 ${h}時間 ${m}分`;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+}
+
+// Firestore にユーザーを作成（初回ログイン時）
+async function createUserIfNotExists(uid) {
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    await setDoc(ref, {
+      uid,
+      name: randomName(),
+      xp: 0,
+      bananas: 100,
+      createdAt: serverTimestamp()
+    });
+  }
+  return (await getDoc(ref)).data();
+}
+
+// ============================================
+// React コンポーネント
+// ============================================
+const { useState, useEffect, useRef } = React;
+const h = React.createElement;
+
+// ── 認証セクション ──────────────────────────
+function AuthSection({ user, userData, onGoogleLink }) {
+  const [copied, setCopied] = useState(false);
+
+  function copyUid() {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(user.uid).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
+  }
+
+  return h("div", { className: "dq-win", style: { padding: "12px", marginBottom: 10 } },
+    h("div", { style: { fontSize: 11, color: "#aaa", marginBottom: 6 } }, "▼ ログイン状態"),
+    // ログイン状態表示
+    h("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } },
+      h("div", { style: {
+        width: 8, height: 8, borderRadius: "50%",
+        background: user.isAnonymous ? "#ffaa44" : "#44ff44"
+      }}),
+      h("span", { style: { fontSize: 12, color: user.isAnonymous ? "#ffaa44" : "#44ff44" } },
+        user.isAnonymous ? "匿名ログイン中" : `Googleログイン中: ${user.displayName || ""}`
+      )
+    ),
+    // UID表示
+    userData && h("div", { style: { marginBottom: 8 } },
+      h("div", { style: { fontSize: 11, color: "#aaa", marginBottom: 3 } }, "あなたのID（コピーして友達に送ろう）"),
+      h("div", { style: { display: "flex", gap: 6, alignItems: "center" } },
+        h("div", { style: {
+          fontSize: 11, color: "#4488ff", background: "#000022",
+          border: "1px solid #4444aa", padding: "4px 8px", flex: 1,
+          letterSpacing: 1, overflow: "hidden", textOverflow: "ellipsis"
+        }}, user.uid),
+        h("button", {
+          className: "dq-btn",
+          onClick: copyUid,
+          style: { fontSize: 11, padding: "4px 10px", color: "#ffdd00", border: "1px solid #ffdd00" }
+        }, copied ? "✓" : "コピー")
+      )
+    ),
+    // ユーザー情報
+    userData && h("div", { style: { display: "flex", gap: 12, marginBottom: 10, fontSize: 12 } },
+      h("span", { style: { color: "#ffdd00" } }, `名前: ${userData.name}`),
+      h("span", { style: { color: "#44ff44" } }, `XP: ${userData.xp}`),
+      h("span", { style: { color: "#ffaa44" } }, `🍌 ${userData.bananas}`)
+    ),
+    // Google連携ボタン
+    user.isAnonymous && h("button", {
+      className: "dq-btn",
+      onClick: onGoogleLink,
+      style: { width: "100%", textAlign: "center", padding: "10px", color: "#fff", border: "2px solid #4488ff", fontSize: 13 }
+    }, "🔗 Googleアカウントと連携する")
+  );
+}
+
+// ── ユーザー検索セクション ──────────────────
+function SearchSection({ currentUser, currentUserData, onBattleRequest }) {
+  const [searchUid, setSearchUid] = useState("");
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [requesting, setRequesting] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function handleSearch() {
+    if (!searchUid.trim()) return;
+    setLoading(true); setError(""); setResult(null); setDone(false);
+    try {
+      const snap = await getDoc(doc(db, "users", searchUid.trim()));
+      if (snap.exists()) {
+        setResult({ uid: snap.id, ...snap.data() });
+      } else {
+        setError("ユーザーが見つかりませんでした");
+      }
+    } catch(e) {
+      setError("検索に失敗しました");
+    }
+    setLoading(false);
+  }
+
+  async function handleBattleRequest() {
+    if (!result) return;
+    setRequesting(true);
+    try {
+      // battles コレクションに対戦リクエストを作成
+      await addDoc(collection(db, "battles"), {
+        challengerId: currentUser.uid,
+        challengerName: currentUserData.name,
+        opponentId: result.uid,
+        opponentName: result.name,
+        status: "pending",
+        startAt: null,
+        endAt: null,
+        challengerXP: 0,
+        opponentXP: 0,
+        winnerId: null,
+        createdAt: serverTimestamp()
+      });
+      setDone(true);
+      if (onBattleRequest) onBattleRequest();
+    } catch(e) {
+      setError("対戦申請に失敗しました");
+    }
+    setRequesting(false);
+  }
+
+  return h("div", { className: "dq-win", style: { padding: "12px", marginBottom: 10 } },
+    h("div", { style: { fontSize: 11, color: "#aaa", marginBottom: 8 } }, "▼ ユーザーを検索して対戦申請"),
+    h("div", { style: { display: "flex", gap: 6, marginBottom: 8 } },
+      h("input", {
+        className: "dq-input",
+        value: searchUid,
+        onChange: e => setSearchUid(e.target.value),
+        placeholder: "相手のUIDを入力",
+        style: { flex: 1, fontSize: 12 }
+      }),
+      h("button", {
+        className: "dq-btn",
+        onClick: handleSearch,
+        style: { padding: "6px 12px", color: "#ffdd00", border: "2px solid #ffdd00", fontSize: 12 }
+      }, loading ? "…" : "けんさく")
+    ),
+    error && h("div", { style: { fontSize: 12, color: "#ff4444", marginBottom: 8 } }, error),
+    result && h("div", { className: "dq-win", style: { padding: "10px", borderColor: "#4488ff", marginBottom: 8 } },
+      h("div", { style: { fontSize: 13, color: "#ffdd00", marginBottom: 6 } }, result.name),
+      h("div", { style: { display: "flex", gap: 12, fontSize: 12, marginBottom: 10 } },
+        h("span", { style: { color: "#44ff44" } }, `XP: ${result.xp}`),
+        h("span", { style: { color: "#ffaa44" } }, `🍌 ${result.bananas}`)
+      ),
+      done
+        ? h("div", { style: { fontSize: 12, color: "#44ff44", textAlign: "center", padding: "8px" } }, "✓ 対戦申請を送りました！")
+        : result.uid === currentUser.uid
+          ? h("div", { style: { fontSize: 12, color: "#ff4444" } }, "自分自身には申請できません")
+          : h("button", {
+              className: "dq-btn",
+              onClick: handleBattleRequest,
+              style: { width: "100%", textAlign: "center", padding: "10px", color: "#ff6666", border: "2px solid #ff6666", fontSize: 13 }
+            }, requesting ? "送信中…" : "⚔ 対戦を申し込む！")
+    )
+  );
+}
+
+// ── 対戦カード ──────────────────────────────
+function BattleCard({ battle, currentUid, onAccept, onRefresh }) {
+  const [countdown, setCountdown] = useState("");
+  const isChallenger = battle.challengerId === currentUid;
+  const myXP = isChallenger ? battle.challengerXP : battle.opponentXP;
+  const opponentXP = isChallenger ? battle.opponentXP : battle.challengerXP;
+  const myName = isChallenger ? battle.challengerName : battle.opponentName;
+  const opponentName = isChallenger ? battle.opponentName : battle.challengerName;
+
+  // カウントダウンタイマー
+  useEffect(() => {
+    if (battle.status !== "active" || !battle.endAt) return;
+    const timer = setInterval(() => {
+      setCountdown(formatCountdown(battle.endAt));
+    }, 1000);
+    setCountdown(formatCountdown(battle.endAt));
+    return () => clearInterval(timer);
+  }, [battle]);
+
+  // ステータスに応じたバッジ色
+  const statusColor = { pending: "#ffaa44", active: "#44ff44", finished: "#aaa" };
+  const statusLabel = { pending: "⏳ 承認待ち", active: "⚔ バトル中！", finished: "🏁 終了" };
+
+  return h("div", { className: "dq-win", style: { padding: "12px", marginBottom: 8 } },
+    // ステータスバッジ
+    h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
+      h("span", { style: { fontSize: 12, color: statusColor[battle.status] || "#aaa" } },
+        statusLabel[battle.status] || battle.status
+      ),
+      battle.status === "active" && h("span", { style: { fontSize: 11, color: "#aaa", animation: "countdown 1s infinite" } },
+        "残り " + countdown
+      )
+    ),
+
+    // 対戦相手
+    h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 } },
+      // 自分
+      h("div", { style: { textAlign: "center", flex: 1 } },
+        h("div", { style: { fontSize: 12, color: "#ffdd00", marginBottom: 4 } }, myName),
+        h("div", { style: { fontSize: 20, color: "#44ff44", fontWeight: "bold" } }, myXP),
+        h("div", { style: { fontSize: 10, color: "#aaa" } }, "XP")
+      ),
+      h("div", { style: { fontSize: 18, color: "#ff4444" } }, "VS"),
+      // 相手
+      h("div", { style: { textAlign: "center", flex: 1 } },
+        h("div", { style: { fontSize: 12, color: "#ffdd00", marginBottom: 4 } }, opponentName),
+        h("div", { style: { fontSize: 20, color: "#ff6666", fontWeight: "bold" } }, opponentXP),
+        h("div", { style: { fontSize: 10, color: "#aaa" } }, "XP")
+      )
+    ),
+
+    // XPバー比較
+    battle.status === "active" && h("div", { style: { marginBottom: 10 } },
+      h("div", { style: { height: 8, background: "#001100", border: "1px solid #336633", overflow: "hidden", position: "relative" } },
+        h("div", { style: {
+          height: "100%",
+          width: (myXP + opponentXP > 0 ? Math.round(myXP / (myXP + opponentXP) * 100) : 50) + "%",
+          background: "#44ff44", transition: "width 0.5s"
+        }})
+      ),
+      h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 10, color: "#aaa", marginTop: 2 } },
+        h("span", null, "あなた"),
+        h("span", null, "相手")
+      )
+    ),
+
+    // 承認ボタン（pending かつ 自分がopponent の場合）
+    battle.status === "pending" && !isChallenger && h("button", {
+      className: "dq-btn",
+      onClick: () => onAccept(battle.id),
+      style: { width: "100%", textAlign: "center", padding: "10px", color: "#44ff44", border: "2px solid #44ff44", fontSize: 13 }
+    }, "✓ 対戦を承認する"),
+
+    // 申請中表示
+    battle.status === "pending" && isChallanger && h("div", {
+      style: { fontSize: 11, color: "#aaa", textAlign: "center", padding: "6px" }
+    }, "相手の承認を待っています…"),
+
+    // 終了時の結果
+    battle.status === "finished" && h("div", { style: { textAlign: "center", padding: "6px" } },
+      battle.winnerId === currentUid
+        ? h("div", { style: { fontSize: 14, color: "#ffdd00" } }, "🏆 あなたの勝ち！ +20🍌")
+        : battle.winnerId
+          ? h("div", { style: { fontSize: 14, color: "#aaa" } }, "敗北… -5🍌")
+          : h("div", { style: { fontSize: 14, color: "#aaa" } }, "引き分け")
+    )
+  );
+}
+
+// ── メインアプリ ────────────────────────────
+function App() {
+  const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [battles, setBattles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("battle"); // "battle" | "search"
+
+  // 認証状態の監視
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      if (u) {
+        setUser(u);
+        const data = await createUserIfNotExists(u.uid);
+        setUserData(data);
+      } else {
+        // 未ログインなら匿名ログイン
+        try {
+          await signInAnonymously(auth);
+        } catch(e) {
+          console.error("匿名ログイン失敗:", e);
+        }
+      }
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  // 自分の対戦一覧をリアルタイム監視
+  useEffect(() => {
+    if (!user) return;
+    // challenger として参加している対戦
+    const q1 = query(collection(db, "battles"), where("challengerId", "==", user.uid));
+    // opponent として参加している対戦
+    const q2 = query(collection(db, "battles"), where("opponentId", "==", user.uid));
+
+    const map = {};
+    const unsub1 = onSnapshot(q1, snap => {
+      snap.docs.forEach(d => map[d.id] = { id: d.id, ...d.data() });
+      setBattles(Object.values(map).sort((a, b) => {
+        const order = { active: 0, pending: 1, finished: 2 };
+        return (order[a.status] ?? 3) - (order[b.status] ?? 3);
+      }));
+    });
+    const unsub2 = onSnapshot(q2, snap => {
+      snap.docs.forEach(d => map[d.id] = { id: d.id, ...d.data() });
+      setBattles(Object.values(map).sort((a, b) => {
+        const order = { active: 0, pending: 1, finished: 2 };
+        return (order[a.status] ?? 3) - (order[b.status] ?? 3);
+      }));
+    });
+    return () => { unsub1(); unsub2(); };
+  }, [user]);
+
+  // Google連携
+  async function handleGoogleLink() {
+    if (!user) return;
+    const provider = new GoogleAuthProvider();
+    try {
+      if (user.isAnonymous) {
+        // 匿名→Google にアップグレード（データは引き継がれる）
+        await linkWithPopup(user, provider);
+      } else {
+        await signInWithPopup(auth, provider);
+      }
+      // ユーザーデータを更新
+      const data = await createUserIfNotExists(user.uid);
+      setUserData(data);
+      alert("Googleアカウントと連携しました！");
+    } catch(e) {
+      if (e.code === "auth/credential-already-in-use") {
+        alert("このGoogleアカウントは既に使用されています");
+      } else {
+        alert("連携に失敗しました: " + e.message);
+      }
+    }
+  }
+
+  // 対戦承認
+  async function handleAccept(battleId) {
+    const now = new Date();
+    const endAt = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // 3日後
+    try {
+      await updateDoc(doc(db, "battles", battleId), {
+        status: "active",
+        startAt: Timestamp.fromDate(now),
+        endAt: Timestamp.fromDate(endAt)
+      });
+    } catch(e) {
+      alert("承認に失敗しました");
+    }
+  }
+
+  // ローディング中
+  if (loading) return h("div", {
+    style: { display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#ffdd00", fontSize: 14 }
+  }, "ロード中...");
+
+  if (!user) return null;
+
+  const tabStyle = (t) => ({
+    flex: 1, padding: "10px 0", border: "none", cursor: "pointer", fontSize: 12,
+    fontFamily: "'DotGothic16',monospace",
+    background: tab === t ? "rgba(92,184,122,0.18)" : "rgba(255,255,255,0.05)",
+    color: tab === t ? "#5cb87a" : "#aaa",
+    boxShadow: tab === t ? "inset 0 2px 4px rgba(0,0,0,0.3)" : "inset 0 1px 3px rgba(0,0,0,0.2)"
+  });
+
+  return h("div", { style: { maxWidth: 430, margin: "0 auto", padding: "10px 12px", background: "#0a0a1a", minHeight: "100vh" } },
+    // タイトル
+    h("div", { style: { textAlign: "center", marginBottom: 10 } },
+      h("div", { style: { fontSize: 18, color: "#ffdd00", letterSpacing: 2 } }, "⚔ GORILLA BATTLE ⚔"),
+      h("a", {
+        href: "index.html",
+        style: { fontSize: 11, color: "#4488ff", textDecoration: "none" }
+      }, "← Gorilla Quest に戻る")
+    ),
+
+    // 認証セクション
+    user && userData && h(AuthSection, { user, userData, onGoogleLink: handleGoogleLink }),
+
+    // タブ
+    h("div", { style: { display: "flex", gap: 2, marginBottom: 10, background: "rgba(0,0,0,0.3)" } },
+      h("button", { style: tabStyle("battle"), onClick: () => setTab("battle") }, "▶ バトル一覧"),
+      h("button", { style: tabStyle("search"), onClick: () => setTab("search") }, "▶ ユーザー検索")
+    ),
+
+    // バトル一覧タブ
+    tab === "battle" && h("div", null,
+      battles.length === 0
+        ? h("div", { className: "dq-win", style: { padding: "20px", textAlign: "center", color: "#aaa", fontSize: 12 } },
+            "まだバトルがありません。\nユーザー検索から対戦を申し込もう！"
+          )
+        : battles.map(b => h(BattleCard, {
+            key: b.id,
+            battle: b,
+            currentUid: user.uid,
+            onAccept: handleAccept
+          }))
+    ),
+
+    // ユーザー検索タブ
+    tab === "search" && user && userData && h(SearchSection, {
+      currentUser: user,
+      currentUserData: userData,
+      onBattleRequest: () => setTab("battle")
+    }),
+
+    h("div", { style: { height: 24 } })
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
