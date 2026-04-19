@@ -319,7 +319,7 @@ function BattleCard({ battle, currentUid, onAccept, onRefresh }) {
     }, "✓ 対戦を承認する"),
 
     // 申請中表示
-    battle.status === "pending" && isChallanger && h("div", {
+    battle.status === "pending" && isChallenger && h("div", {
       style: { fontSize: 11, color: "#aaa", textAlign: "center", padding: "6px" }
     }, "相手の承認を待っています…"),
 
