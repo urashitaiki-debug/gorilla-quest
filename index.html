@@ -277,7 +277,32 @@ function MenuEditor({menu,onSave,onClose}){
     h("div",{className:"dq-win",style:{padding:"12px",maxWidth:430,margin:"0 auto"}},
       h("div",{style:{fontSize:14,color:"#ffdd00",marginBottom:12}},"▼ メニューへんしゅう"),
       h("input",{className:"dq-input",value:name,onChange:e=>setName(e.target.value),style:{width:"100%",fontSize:14,marginBottom:10}}),
-      items.map((item,idx)=>{var ip=getPartForEx(item.exercise);return h("div",{key:idx,className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#4444aa"}},h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:6}},h("div",{style:{fontSize:11,color:"#aaa"}},"しゅもく "+(idx+1)),h("button",{className:"dq-btn",onClick:()=>del(idx),style:{fontSize:11,padding:"2px 8px",color:"#ff4444",border:"1px solid #ff4444"}},"✕")),h("div",{style:{display:"flex",gap:3,marginBottom:6}},PARTS.map(p=>h("button",{key:p,className:"dq-btn "+(ip===p?"active":""),onClick:()=>upd(idx,"exercise",PRESETS[p][0]),style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:ip===p?PART_COLOR[p]:"#aaa",borderBottom:ip===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p))),h("select",{className:"dq-input",value:item.exercise,onChange:e=>upd(idx,"exercise",e.target.value),style:{width:"100%",marginBottom:6,fontSize:12}},PRESETS[ip].map(e=>h("option",{key:e,value:e},e))),h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}},[["じゅうりょう",item.weight,"weight",5,0],["かいすう",item.reps,"reps",1,1],["セット",item.sets,"sets",1,1]].map(f=>h("div",{key:f[0]},h("div",{style:{fontSize:9,color:"#aaa",marginBottom:2,textAlign:"center"}},f[0]),h("div",{style:{display:"flex"}},h("button",{className:"dq-btn",onClick:()=>upd(idx,f[2],Math.max(f[4],f[1]-f[3])),style:{width:26,textAnchor:"center",padding:"2px",fontSize:12}},"◀"),h("span",{style:{flex:1,textAlign:"center",fontSize:12,color:"#ffdd00",background:"#000011",padding:"3px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},f[1]),h("button",{className:"dq-btn",onClick:()=>upd(idx,f[2],f[1]+f[3]),style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"▶")))))));
+      items.map((item,idx)=>{
+        var ip=getPartForEx(item.exercise);
+        return h("div",{key:idx,className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#4444aa"}},
+          h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:6}},
+            h("div",{style:{fontSize:11,color:"#aaa"}},"しゅもく "+(idx+1)),
+            h("button",{className:"dq-btn",onClick:()=>del(idx),style:{fontSize:11,padding:"2px 8px",color:"#ff4444",border:"1px solid #ff4444"}},"✕")
+          ),
+          h("div",{style:{display:"flex",gap:3,marginBottom:6}},
+            PARTS.map(p=>h("button",{key:p,className:"dq-btn "+(ip===p?"active":""),onClick:()=>upd(idx,"exercise",PRESETS[p][0]),style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:ip===p?PART_COLOR[p]:"#aaa",borderBottom:ip===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p))
+          ),
+          h("select",{className:"dq-input",value:item.exercise,onChange:e=>upd(idx,"exercise",e.target.value),style:{width:"100%",marginBottom:6,fontSize:12}},
+            PRESETS[ip].map(e=>h("option",{key:e,value:e},e))
+          ),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}},
+            [["じゅうりょう",item.weight,"weight",5,0],["かいすう",item.reps,"reps",1,1],["セット",item.sets,"sets",1,1]].map(f=>
+              h("div",{key:f[0]},
+                h("div",{style:{fontSize:9,color:"#aaa",marginBottom:2,textAlign:"center"}},f[0]),
+                h("div",{style:{display:"flex"}},
+                  h("button",{className:"dq-btn",onClick:()=>upd(idx,f[2],Math.max(f[4],f[1]-f[3])),style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"◀"),
+                  h("span",{style:{flex:1,textAlign:"center",fontSize:12,color:"#ffdd00",background:"#000011",padding:"3px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},f[1]),
+                  h("button",{className:"dq-btn",onClick:()=>upd(idx,f[2],f[1]+f[3]),style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"▶")
+                )
+              )
+            )
+          )
+        );
       }),
       items.length<10&&h("div",{className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#44ff44"}},h("div",{style:{fontSize:11,color:"#44ff44",marginBottom:6}},"▼ しゅもくをついか"),h("div",{style:{display:"flex",gap:3,marginBottom:6}},PARTS.map(p=>h("button",{key:p,className:"dq-btn "+(addPart===p?"active":""),onClick:()=>setAddPart(p),style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:addPart===p?PART_COLOR[p]:"#aaa",borderBottom:addPart===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p))),h("div",{style:{display:"flex",flexWrap:"wrap",gap:4}},PRESETS[addPart].map(e=>h("button",{key:e,className:"dq-btn",onClick:()=>setItems(prev=>[...prev,{exercise:e,weight:60,reps:10,sets:3}]),style:{fontSize:11,padding:"5px 8px",color:"#44ff44",border:"1px solid #44ff44"}},e)))),
       h("div",{style:{display:"flex",gap:8}},h("button",{className:"dq-btn",onClick:onClose,style:{flex:1,textAlign:"center",padding:"10px",color:"#ff4444",border:"2px solid #ff4444"}},"キャンセル"),h("button",{className:"dq-btn",onClick:()=>onSave({name,items}),style:{flex:1,textAlign:"center",padding:"10px",color:"#ffdd00",border:"2px solid #ffdd00"}},"ほぞん"))
