@@ -112,16 +112,27 @@ async function syncBattleScore(uid,currentTotalXP){
   }catch(e){console.log("syncBattleScore err",e);}
 }
 
-// ── バトル終了処理 ────────────────────────────────────────
+// ── バトル終了処理（二重実行防止・報酬は1回のみ） ────────
 async function finalizeBattle(battleId,battle){
   try{
+    // まず現在のステータスを確認（二重処理防止）
+    const snap=await getDoc(doc(db,"battles",battleId));
+    if(!snap.exists()||snap.data().status==="finished")return;
+
     const cs=battle.challengerScore||0,os=battle.opponentScore||0;
-    let winnerId=null,loserId=null;
+    let winnerId="draw",loserId=null;
     if(cs>os){winnerId=battle.challengerId;loserId=battle.opponentId;}
     else if(os>cs){winnerId=battle.opponentId;loserId=battle.challengerId;}
+
     const batch=writeBatch(db);
-    batch.update(doc(db,"battles",battleId),{status:"finished",winnerId:winnerId||"draw"});
-    if(winnerId){
+    // バトルをfinishedに更新
+    batch.update(doc(db,"battles",battleId),{
+      status:"finished",
+      winnerId:winnerId,
+      endAt:Timestamp.fromDate(new Date())
+    });
+    // バナナ増減（引き分け時は変動なし）
+    if(winnerId!=="draw"&&loserId){
       batch.update(doc(db,"users",winnerId),{bananas:increment(10)});
       batch.update(doc(db,"users",loserId),{bananas:increment(-5)});
     }
@@ -234,7 +245,29 @@ function FriendCard({fd,fid,onRemove,onBattle,battleStatus}){
   );
 }
 
-// ── UI部品 ──────────────────────────────────────────────
+// ── バトル履歴カード（コンパクト表示） ──────────────────
+function BattleHistoryCard({battle,currentUid}){
+  var isC=battle.challengerId===currentUid;
+  var myScore=isC?(battle.challengerScore||0):(battle.opponentScore||0);
+  var oppScore=isC?(battle.opponentScore||0):(battle.challengerScore||0);
+  var oppName=isC?battle.opponentName:battle.challengerName;
+  var won=battle.winnerId===currentUid;
+  var draw=battle.winnerId==="draw";
+  var resultLabel=won?"かち":draw?"ひきわけ":"まけ";
+  var resultColor=won?"#ffdd00":draw?"#888":"#aaa";
+  // endAtをMM/DD形式に
+  var dateStr="--/--";
+  if(battle.endAt){
+    var d=battle.endAt.toDate?battle.endAt.toDate():new Date(battle.endAt);
+    dateStr=(d.getMonth()+1)+"/"+(d.getDate());
+  }
+  return h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderBottom:"1px solid #111144",fontSize:12}},
+    h("div",{style:{color:"#aaa",width:36,flexShrink:0}},dateStr),
+    h("div",{style:{flex:1,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",padding:"0 6px"}},"vs "+oppName),
+    h("div",{style:{color:"#aaa",marginRight:8,whiteSpace:"nowrap"}},myScore+" vs "+oppScore),
+    h("div",{style:{color:resultColor,fontWeight:"bold",width:36,textAlign:"right",flexShrink:0}},resultLabel)
+  );
+}
 function DQBar({value,max,color,width="100%"}){var pct=Math.min(Math.round((value/max)*100),100);return h("div",{style:{width,height:10,background:"#001100",border:"1px solid #336633",display:"inline-block",verticalAlign:"middle"}},h("div",{style:{height:"100%",width:pct+"%",background:color,transition:"width 0.4s"}}));}
 function Stepper({value,onChange,step=5,min=0}){return h("div",{style:{display:"flex",alignItems:"center"}},h("button",{className:"dq-btn",onClick:()=>onChange(Math.max(min,value-step)),style:{width:32,textAlign:"center",padding:"4px",fontSize:14}},"◀"),h("span",{style:{flex:1,textAlign:"center",fontSize:13,color:"#ffdd00",background:"#000011",padding:"5px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},value),h("button",{className:"dq-btn",onClick:()=>onChange(value+step),style:{width:32,textAlign:"center",padding:"4px",fontSize:14}},"▶"));}
 function LevelUpOverlay({level,onDone}){useEffect(()=>{var t=setTimeout(onDone,2800);return()=>clearTimeout(t);},[]);return h("div",{style:{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}},h("div",{style:{animation:"flash 0.3s ease 2",background:"rgba(255,255,100,0.12)",position:"absolute",inset:0}}),h("div",{className:"dq-win",style:{padding:"20px 32px",textAlign:"center",animation:"levelup 2.8s ease forwards",border:"4px solid #ffdd00"}},h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:8}},"✦ ✦ ✦"),h("div",{style:{fontSize:18,color:"#ffdd00",lineHeight:1.8}},"レベルが あがった！",h("br"),h("span",{style:{fontSize:24,color:"#fff"}},"Lv."+level)),h("div",{style:{fontSize:13,color:"#ffdd00",marginTop:8}},"✦ ✦ ✦")));}
@@ -733,6 +766,7 @@ function App(){
 
     // ── FRIENDS + BATTLE ─────────────────────────────────
     tab==="friends"?h("div",null,
+      // 自分のID
       h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
         h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ じぶんのID"),
         h("div",{style:{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}},
@@ -741,10 +775,12 @@ function App(){
         ),
         h("div",{style:{fontSize:10,color:"#666688",textAlign:"center",marginTop:4}},"このIDをともだちにおしえよう")
       ),
-      battles.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-        h("div",{style:{fontSize:11,color:"#ff6666",marginBottom:8}},"▼ ⚔ バトル"),
-        battles.map(b=>h(BattleCard,{key:b.id,battle:b,currentUid:authUser?.uid,onFinalize:handleFinalize}))
+      // セクションA：進行中バトル
+      battles.filter(b=>b.status==="active").length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#ff6666",marginBottom:8}},"▼ ⚔ バトル中"),
+        battles.filter(b=>b.status==="active").map(b=>h(BattleCard,{key:b.id,battle:b,currentUid:authUser?.uid,onFinalize:handleFinalize}))
       ):null,
+      // フレンド検索
       h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
         h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ともだちをけんさく"),
         h("div",{style:{display:"flex",gap:6,marginBottom:8}},
@@ -760,6 +796,7 @@ function App(){
         ):null,
         friendResult==="notfound"?h("div",{style:{fontSize:12,color:"#ff4444"}},"みつかりませんでした"):null
       ),
+      // フレンドリスト
       friends.length>0?h("div",null,
         h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ともだちリスト ("+friends.length+"人)"),
         friends.map(fid=>{
@@ -768,7 +805,19 @@ function App(){
           var ab=getActiveBattle(fid);
           return h(FriendCard,{key:fid,fd,fid,onRemove:()=>removeFriend(fid),battleStatus:ab?"active":null,onBattle:()=>handleBattleRequest(fid,fd.gorillaName||"ゴリラ",fd.uid)});
         })
-      ):h("div",{style:{textAlign:"center",color:"#aaa",fontSize:12,padding:20}},"まだともだちがいません")
+      ):h("div",{style:{textAlign:"center",color:"#aaa",fontSize:12,padding:20}},"まだともだちがいません"),
+      // セクションB：バトル履歴（最下部）
+      battles.filter(b=>b.status==="finished").length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginTop:8,marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ バトル履歴"),
+        battles
+          .filter(b=>b.status==="finished")
+          .sort((a,b)=>{
+            var at=a.endAt?.toDate?a.endAt.toDate().getTime():0;
+            var bt=b.endAt?.toDate?b.endAt.toDate().getTime():0;
+            return bt-at;
+          })
+          .map(b=>h(BattleHistoryCard,{key:b.id,battle:b,currentUid:authUser?.uid}))
+      ):null
     ):null,
 
     h("div",{style:{height:24}})
