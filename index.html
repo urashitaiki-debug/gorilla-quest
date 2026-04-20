@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
 <meta charset="UTF-8"/>
@@ -24,6 +23,7 @@ select,input{appearance:none;-webkit-appearance:none;}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 @keyframes rouletteSpin{0%{transform:scale(1)}50%{transform:scale(1.1)}100%{transform:scale(1)}}
 @keyframes degrade{0%{opacity:0;transform:translateY(-10px)}30%{opacity:1;transform:translateY(0)}80%{opacity:1}100%{opacity:0}}
+@keyframes badgePop{0%{opacity:0;transform:translateY(20px)}15%{opacity:1;transform:translateY(0)}80%{opacity:1}100%{opacity:0}}
 </style>
 </head>
 <body>
@@ -34,727 +34,733 @@ import{initializeApp}from"https://www.gstatic.com/firebasejs/12.12.0/firebase-ap
 import{getAuth,signInWithPopup,GoogleAuthProvider,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 import{getFirestore,doc,setDoc,getDoc,updateDoc,addDoc,collection,query,where,onSnapshot,serverTimestamp,Timestamp,getDocs,writeBatch,increment}from"https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 
-const fbConfig={apiKey:“AIzaSyChzYzgoK-k0Yk9ftiY7vMOeHDpYEOeDlw”,authDomain:“gorilla-quest-b189c.firebaseapp.com”,projectId:“gorilla-quest-b189c”,storageBucket:“gorilla-quest-b189c.firebasestorage.app”,messagingSenderId:“581762660070”,appId:“1:581762660070:web:803c2a77a9341b4c89ad27”};
+const fbConfig={apiKey:"AIzaSyChzYzgoK-k0Yk9ftiY7vMOeHDpYEOeDlw",authDomain:"gorilla-quest-b189c.firebaseapp.com",projectId:"gorilla-quest-b189c",storageBucket:"gorilla-quest-b189c.firebasestorage.app",messagingSenderId:"581762660070",appId:"1:581762660070:web:803c2a77a9341b4c89ad27"};
 const fbApp=initializeApp(fbConfig);
 const auth=getAuth(fbApp);
 const db=getFirestore(fbApp);
 
-// ── GQ ID（UID固定・1アカウント1ID）──────────────────────
-function makeGQId(uid){return”GQ-”+uid.slice(0,6).toUpperCase();}
+// ── GQ ID生成（UID固定） ──────────────────────────────────
+// FirebaseのUIDからGQ-XXXXXXを生成（1アカウント1ID）
+function makeGQId(uid){return"GQ-"+uid.slice(0,6).toUpperCase();}
 
-// ── Firestoreのゲームデータフィールド ────────────────────
-// usersドキュメントに保存するゲームデータのキー一覧
-const GAME_FIELDS=[“totalXP”,“partXP”,“exercises”,“sessions”,“totalSessions”,“maxStreak”,“level”,“totalProtein”,“nightRecord”,“morningRecord”,“noonRecord”,“prCount”,“totalSets”,“maxWeight”,“maxDailySessions”,“workoutLog”,“menuRecords”];
-
-// ── ユーザードキュメント保証＆データ復元 ─────────────────
-// 戻り値: { userData, gameData }
-async function loadUserFromFirestore(uid){
-const ref=doc(db,“users”,uid);
-const snap=await getDoc(ref);
-const gqId=makeGQId(uid);
-
-if(!snap.exists()){
-// 新規ユーザー
-const newDoc={
-uid,gqId,gorillaName:“ゴリラ”,
-xp:0,bananas:100,resetAt:null,
-createdAt:serverTimestamp(),
-// ゲームデータ初期値
-totalXP:0,partXP:{},exercises:{},sessions:[],
-totalSessions:0,maxStreak:0,level:1,totalProtein:0,
-nightRecord:false,morningRecord:false,noonRecord:false,
-prCount:0,totalSets:0,maxWeight:0,maxDailySessions:0,
-workoutLog:[],menuRecords:0
-};
-await setDoc(ref,newDoc);
-return{userData:newDoc,gameData:buildGameData(newDoc)};
+// ── ユーザードキュメント保証 ──────────────────────────────
+// ログイン時に呼ぶ。既存ならそのまま返す、なければ新規作成
+async function ensureUserDoc(uid,gorillaName){
+  const ref=doc(db,"users",uid);
+  const snap=await getDoc(ref);
+  if(!snap.exists()){
+    const gqId=makeGQId(uid);
+    await setDoc(ref,{
+      uid,gqId,
+      gorillaName:gorillaName||"ゴリラ",
+      xp:0,bananas:100,
+      createdAt:serverTimestamp()
+    });
+  }
+  return(await getDoc(ref)).data();
 }
 
-const d=snap.data();
-return{
-userData:d,
-gameData:buildGameData(d)
-};
+// ── バトルスコアを更新 ──────────────────────────────────
+// バトル開始時のXPを起点として差分をスコアに反映
+async function syncBattleScore(uid,gqId,currentTotalXP){
+  try{
+    const q1=query(collection(db,"battles"),where("challengerId","==",uid),where("status","==","active"));
+    const q2=query(collection(db,"battles"),where("opponentId","==",uid),where("status","==","active"));
+    const [s1,s2]=await Promise.all([getDocs(q1),getDocs(q2)]);
+    const updates=[];
+    s1.forEach(d=>{
+      const baseXP=d.data().challengerBaseXP||0;
+      const score=Math.max(0,currentTotalXP-baseXP);
+      updates.push(updateDoc(doc(db,"battles",d.id),{challengerScore:score}));
+    });
+    s2.forEach(d=>{
+      const baseXP=d.data().opponentBaseXP||0;
+      const score=Math.max(0,currentTotalXP-baseXP);
+      updates.push(updateDoc(doc(db,"battles",d.id),{opponentScore:score}));
+    });
+    await Promise.all(updates);
+  }catch(e){console.log("syncBattleScore err",e);}
 }
 
-// Firestoreドキュメントからゲームデータを抽出
-function buildGameData(d){
-return{
-totalXP:d.totalXP||0,
-partXP:d.partXP||{},
-exercises:d.exercises||{},
-sessions:d.sessions||[],
-totalSessions:d.totalSessions||0,
-maxStreak:d.maxStreak||0,
-level:d.level||1,
-totalProtein:d.totalProtein||0,
-nightRecord:d.nightRecord||false,
-morningRecord:d.morningRecord||false,
-noonRecord:d.noonRecord||false,
-prCount:d.prCount||0,
-totalSets:d.totalSets||0,
-maxWeight:d.maxWeight||0,
-maxDailySessions:d.maxDailySessions||0,
-workoutLog:d.workoutLog||[],
-menuRecords:d.menuRecords||0
-};
-}
-
-// ── バトルスコア更新 ──────────────────────────────────────
-async function syncBattleScore(uid,currentTotalXP){
-try{
-const q1=query(collection(db,“battles”),where(“challengerId”,”==”,uid),where(“status”,”==”,“active”));
-const q2=query(collection(db,“battles”),where(“opponentId”,”==”,uid),where(“status”,”==”,“active”));
-const[s1,s2]=await Promise.all([getDocs(q1),getDocs(q2)]);
-const updates=[];
-s1.forEach(d=>{const base=d.data().challengerBaseXP||0;updates.push(updateDoc(doc(db,“battles”,d.id),{challengerScore:Math.max(0,currentTotalXP-base)}));});
-s2.forEach(d=>{const base=d.data().opponentBaseXP||0;updates.push(updateDoc(doc(db,“battles”,d.id),{opponentScore:Math.max(0,currentTotalXP-base)}));});
-await Promise.all(updates);
-}catch(e){console.log(“syncBattleScore err”,e);}
-}
-
-// ── バトル終了処理 ────────────────────────────────────────
+// ── バトル終了処理 ──────────────────────────────────────
 async function finalizeBattle(battleId,battle){
-try{
-const cs=battle.challengerScore||0,os=battle.opponentScore||0;
-let winnerId=null,loserId=null;
-if(cs>os){winnerId=battle.challengerId;loserId=battle.opponentId;}
-else if(os>cs){winnerId=battle.opponentId;loserId=battle.challengerId;}
-const batch=writeBatch(db);
-batch.update(doc(db,“battles”,battleId),{status:“finished”,winnerId:winnerId||“draw”});
-if(winnerId){
-batch.update(doc(db,“users”,winnerId),{bananas:increment(10)});
-batch.update(doc(db,“users”,loserId),{bananas:increment(-5)});
-}
-await batch.commit();
-}catch(e){console.log(“finalizeBattle err”,e);}
+  try{
+    const cs=battle.challengerScore||0;
+    const os=battle.opponentScore||0;
+    let winnerId=null,loserId=null;
+    if(cs>os){winnerId=battle.challengerId;loserId=battle.opponentId;}
+    else if(os>cs){winnerId=battle.opponentId;loserId=battle.challengerId;}
+    // Firestoreを一括更新
+    const batch=writeBatch(db);
+    batch.update(doc(db,"battles",battleId),{status:"finished",winnerId:winnerId||"draw"});
+    if(winnerId){
+      batch.update(doc(db,"users",winnerId),{bananas:increment(10)});
+      batch.update(doc(db,"users",loserId),{bananas:increment(-5)});
+    }
+    await batch.commit();
+  }catch(e){console.log("finalizeBattle err",e);}
 }
 
 // ── React ────────────────────────────────────────────────
 var h=React.createElement,useState=React.useState,useEffect=React.useEffect,useCallback=React.useCallback,useRef=React.useRef;
 
 // ── 定数 ──────────────────────────────────────────────────
-var PARTS=[“胸”,“背中”,“脚”,“腕”,“肩”];
-var PART_COLOR={“胸”:”#ff6666”,“背中”:”#6699ff”,“脚”:”#66ff66”,“腕”:”#ffaa44”,“肩”:”#cc66ff”};
-var PRESETS={“胸”:[“ベンチプレス”,“ダンベルフライ”,“ケーブルクロスオーバー”,“ディップス”,“インクラインプレス”],“背中”:[“デッドリフト”,“ラットプルダウン”,“ベントオーバーロウ”,“チンアップ”],“脚”:[“スクワット”,“レッグプレス”,“ランジ”,“レッグカール”],“腕”:[“バーベルカール”,“ハンマーカール”,“トライセプスプレスダウン”,“スカルクラッシャー”],“肩”:[“ショルダープレス”,“サイドレイズ”,“フロントレイズ”,“フェイスプル”]};
-var BASE_URL=“https://urashitaiki-debug.github.io/gorilla-quest/”;
-var GORILLA_IMGS=[BASE_URL+“stage0.png”,BASE_URL+“stage1.png”,BASE_URL+“stage2.png”,BASE_URL+“stage3.png”,BASE_URL+“stage4.png”];
-var STAGE_LABELS=[“あかちゃんゴリラ”,“こゴリラ”,“わかゴリラ”,“おとなゴリラ”,“さいきょうゴリラ”];
+var PARTS=["胸","背中","脚","腕","肩"];
+var PART_COLOR={"胸":"#ff6666","背中":"#6699ff","脚":"#66ff66","腕":"#ffaa44","肩":"#cc66ff"};
+var PRESETS={"胸":["ベンチプレス","ダンベルフライ","ケーブルクロスオーバー","ディップス","インクラインプレス"],"背中":["デッドリフト","ラットプルダウン","ベントオーバーロウ","チンアップ"],"脚":["スクワット","レッグプレス","ランジ","レッグカール"],"腕":["バーベルカール","ハンマーカール","トライセプスプレスダウン","スカルクラッシャー"],"肩":["ショルダープレス","サイドレイズ","フロントレイズ","フェイスプル"]};
+var ALL_EXERCISES=[];Object.values(PRESETS).forEach(a=>a.forEach(e=>{if(!ALL_EXERCISES.includes(e))ALL_EXERCISES.push(e);}));
+var BASE_URL="https://urashitaiki-debug.github.io/gorilla-quest/";
+var GORILLA_IMGS=[BASE_URL+"stage0.png",BASE_URL+"stage1.png",BASE_URL+"stage2.png",BASE_URL+"stage3.png",BASE_URL+"stage4.png"];
+var STAGE_LABELS=["あかちゃんゴリラ","こゴリラ","わかゴリラ","おとなゴリラ","さいきょうゴリラ"];
 var VALID_MS=2*60*60*1000;
-var BATTLE_DURATION_MS=5*60*1000;
-var SK=“gorilla_quest_v4”,CK=“gorilla_checkin_v1”,MK=“gorilla_menus_v1”,FK=“gorilla_friends_v1”,NK=“gorilla_name_v1”;
-var DEFAULT_MENUS=[{name:“メニューA”,items:[{exercise:“ベンチプレス”,weight:60,reps:10,sets:3},{exercise:“ダンベルフライ”,weight:20,reps:10,sets:3}]},{name:“メニューB”,items:[{exercise:“スクワット”,weight:60,reps:10,sets:3},{exercise:“レッグプレス”,weight:80,reps:10,sets:3}]},{name:“メニューC”,items:[{exercise:“デッドリフト”,weight:70,reps:10,sets:3},{exercise:“ラットプルダウン”,weight:50,reps:10,sets:3}]}];
-var ROULETTE_TABLE=[{label:“1.5倍”,mult:1.5,color:”#44ff44”,prob:0.7},{label:“2倍”,mult:2.0,color:”#ffdd00”,prob:0.25},{label:“3倍”,mult:3.0,color:”#ff4444”,prob:0.05}];
-
-var INIT={totalXP:0,partXP:{},exercises:{},sessions:[],totalSessions:0,maxStreak:0,level:1,totalProtein:0,nightRecord:false,morningRecord:false,noonRecord:false,prCount:0,totalSets:0,maxWeight:0,maxDailySessions:0,workoutLog:[],menuRecords:0};
+var BATTLE_DURATION_MS=5*60*1000; // テスト用5分
+var SK="gorilla_quest_v4",CK="gorilla_checkin_v1",MK="gorilla_menus_v1",FK="gorilla_friends_v1",NK="gorilla_name_v1";
+var DEFAULT_MENUS=[{name:"メニューA",items:[{exercise:"ベンチプレス",weight:60,reps:10,sets:3},{exercise:"ダンベルフライ",weight:20,reps:10,sets:3}]},{name:"メニューB",items:[{exercise:"スクワット",weight:60,reps:10,sets:3},{exercise:"レッグプレス",weight:80,reps:10,sets:3}]},{name:"メニューC",items:[{exercise:"デッドリフト",weight:70,reps:10,sets:3},{exercise:"ラットプルダウン",weight:50,reps:10,sets:3}]}];
+var ROULETTE_TABLE=[{label:"1.5倍",mult:1.5,color:"#44ff44",prob:0.7},{label:"2倍",mult:2.0,color:"#ffdd00",prob:0.25},{label:"3倍",mult:3.0,color:"#ff4444",prob:0.05}];
 
 function levelInfo(xp){var lv=1,rem=xp,needed=100;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.3);}return{level:lv,current:rem,needed};}
 function partLevelInfo(xp){var lv=1,rem=xp,needed=50;while(rem>=needed){rem-=needed;lv++;needed=Math.floor(needed*1.4);}return{level:lv,current:rem,needed};}
 function getToday(){return new Date().toISOString().slice(0,10);}
 function getHour(){return new Date().getHours();}
 function daysDiff(a,b){return Math.floor((new Date(b)-new Date(a))/86400000);}
-function getStreak(dates){if(!dates.length)return 0;var uniq=[…new Set(dates)].sort().reverse();var s=1;for(var i=0;i<uniq.length-1;i++){if((new Date(uniq[i])-new Date(uniq[i+1]))/86400000===1)s++;else break;}return s;}
+function getStreak(dates){if(!dates.length)return 0;var uniq=[...new Set(dates)].sort().reverse();var s=1;for(var i=0;i<uniq.length-1;i++){if((new Date(uniq[i])-new Date(uniq[i+1]))/86400000===1)s++;else break;}return s;}
 function getStage(lv){if(lv<3)return 0;if(lv<6)return 1;if(lv<10)return 2;if(lv<15)return 3;return 4;}
-function fmtTime(ms){var m=Math.floor(ms/60000);var s=Math.floor((ms%60000)/1000);return m+“分”+(“0”+s).slice(-2)+“秒”;}
-function fmtCd(endAt){if(!endAt)return”–:–”;var end=endAt.toDate?endAt.toDate().getTime():endAt;var diff=Math.max(0,end-Date.now());var m=Math.floor(diff/60000);var s=Math.floor((diff%60000)/1000);return(“0”+m).slice(-2)+”:”+(“0”+s).slice(-2);}
-function getPartForEx(ex){var f=“胸”;Object.keys(PRESETS).forEach(p=>{if(PRESETS[p].includes(ex))f=p;});return f;}
+function fmtTime(ms){var m=Math.floor(ms/60000);var s=Math.floor((ms%60000)/1000);return m+"分"+("0"+s).slice(-2)+"秒";}
+function fmtCountdown(endAt){
+  if(!endAt)return"--:--";
+  var end=endAt.toDate?endAt.toDate().getTime():endAt;
+  var diff=Math.max(0,end-Date.now());
+  var m=Math.floor(diff/60000);var s=Math.floor((diff%60000)/1000);
+  return("0"+m).slice(-2)+":"+("0"+s).slice(-2);
+}
+function getPartForEx(ex){var f="胸";Object.keys(PRESETS).forEach(p=>{if(PRESETS[p].includes(ex))f=p;});return f;}
 function calcDegradePenalty(lastDate){if(!lastDate)return 0;var diff=daysDiff(lastDate,getToday());if(diff<3)return 0;if(diff===3)return 15;if(diff===4)return 23;return 30*(diff-4)+23;}
 function rollRoulette(){var r=Math.random(),cum=0;for(var i=0;i<ROULETTE_TABLE.length;i++){cum+=ROULETTE_TABLE[i].prob;if(r<cum)return ROULETTE_TABLE[i];}return ROULETTE_TABLE[0];}
 
 // ── ペンタゴンチャート ──────────────────────────────────
 function PentagonChart({partXP={},size=140}){
-var cx=size/2,cy=size/2+8,r=size*0.30,labelR=r+22;
-var angles=PARTS.map((_,i)=>(i*72-90)*Math.PI/180);
-var pts=PARTS.map((p,i)=>{var lv=Math.min(partLevelInfo(partXP[p]||0).level,10);return[cx+r*(lv/10)*Math.cos(angles[i]),cy+r*(lv/10)*Math.sin(angles[i])];});
-var bgPts=angles.map(a=>[cx+r*Math.cos(a),cy+r*Math.sin(a)]);
-return h(“svg”,{width:size,height:size+10,style:{display:“block”,overflow:“visible”}},
-h(“polygon”,{points:bgPts.map(p=>p.join(”,”)).join(” “),fill:“rgba(68,136,255,0.1)”,stroke:”#4444aa”,strokeWidth:1}),
-h(“polygon”,{points:pts.map(p=>p.join(”,”)).join(” “),fill:“rgba(255,221,0,0.25)”,stroke:”#ffdd00”,strokeWidth:2}),
-PARTS.map((p,i)=>{var lv=partLevelInfo(partXP[p]||0).level;var tx=cx+labelR*Math.cos(angles[i]),ty=cy+labelR*Math.sin(angles[i]);return h(“g”,{key:p},h(“text”,{x:tx,y:ty,textAnchor:“middle”,dominantBaseline:“middle”,fontSize:9,fill:PART_COLOR[p],style:{fontFamily:”‘DotGothic16’,monospace”}},p),h(“text”,{x:tx,y:ty+11,textAnchor:“middle”,dominantBaseline:“middle”,fontSize:9,fill:”#aaa”,style:{fontFamily:”‘DotGothic16’,monospace”}},“L”+lv));})
-);
+  var cx=size/2,cy=size/2+8,r=size*0.30,labelR=r+22;
+  var angles=PARTS.map((_,i)=>(i*72-90)*Math.PI/180);
+  var maxLv=10;
+  var pts=PARTS.map((p,i)=>{var lv=Math.min(partLevelInfo(partXP[p]||0).level,maxLv);return[cx+r*(lv/maxLv)*Math.cos(angles[i]),cy+r*(lv/maxLv)*Math.sin(angles[i])];});
+  var bgPts=angles.map(a=>[cx+r*Math.cos(a),cy+r*Math.sin(a)]);
+  return h("svg",{width:size,height:size+10,style:{display:"block",overflow:"visible"}},
+    h("polygon",{points:bgPts.map(p=>p.join(",")).join(" "),fill:"rgba(68,136,255,0.1)",stroke:"#4444aa",strokeWidth:1}),
+    h("polygon",{points:pts.map(p=>p.join(",")).join(" "),fill:"rgba(255,221,0,0.25)",stroke:"#ffdd00",strokeWidth:2}),
+    PARTS.map((p,i)=>{
+      var lv=partLevelInfo(partXP[p]||0).level;
+      var tx=cx+labelR*Math.cos(angles[i]),ty=cy+labelR*Math.sin(angles[i]);
+      return h("g",{key:p},h("text",{x:tx,y:ty,textAnchor:"middle",dominantBaseline:"middle",fontSize:9,fill:PART_COLOR[p],style:{fontFamily:"'DotGothic16',monospace"}},p),h("text",{x:tx,y:ty+11,textAnchor:"middle",dominantBaseline:"middle",fontSize:9,fill:"#aaa",style:{fontFamily:"'DotGothic16',monospace"}},"L"+lv));
+    })
+  );
 }
 
 // ── バトルカード ──────────────────────────────────────────
 function BattleCard({battle,currentUid,onFinalize}){
-var[cd,setCd]=useState(””);
-var isC=battle.challengerId===currentUid;
-var myScore=isC?(battle.challengerScore||0):(battle.opponentScore||0);
-var oppScore=isC?(battle.opponentScore||0):(battle.challengerScore||0);
-var myName=isC?battle.challengerName:battle.opponentName;
-var oppName=isC?battle.opponentName:battle.challengerName;
-var total=myScore+oppScore;
-var myPct=total>0?Math.round(myScore/total*100):50;
-useEffect(()=>{
-if(battle.status!==“active”||!battle.endAt)return;
-function tick(){var end=battle.endAt.toDate?battle.endAt.toDate().getTime():battle.endAt;if(Date.now()>=end&&onFinalize)onFinalize(battle.id,battle);setCd(fmtCd(battle.endAt));}
-tick();var t=setInterval(tick,1000);return()=>clearInterval(t);
-},[battle]);
-var won=battle.status===“finished”&&battle.winnerId===currentUid;
-var lost=battle.status===“finished”&&battle.winnerId&&battle.winnerId!==currentUid&&battle.winnerId!==“draw”;
-return h(“div”,{className:“dq-win”,style:{padding:“10px”,marginBottom:8}},
-h(“div”,{style:{display:“flex”,justifyContent:“space-between”,alignItems:“center”,marginBottom:6}},
-h(“span”,{style:{fontSize:11,color:battle.status===“active”?”#44ff44”:”#aaa”}},battle.status===“active”?“⚔ バトル中！”:“🏁 しゅうりょう”),
-battle.status===“active”&&h(“span”,{style:{fontSize:12,color:”#ffdd00”}},“⏱ “+cd)
-),
-h(“div”,{style:{display:“flex”,justifyContent:“space-between”,alignItems:“center”,marginBottom:8}},
-h(“div”,{style:{textAlign:“center”,flex:1}},h(“div”,{style:{fontSize:11,color:”#ffdd00”,marginBottom:2}},myName),h(“div”,{style:{fontSize:24,color:”#44ff44”,fontWeight:“bold”}},myScore),h(“div”,{style:{fontSize:9,color:”#aaa”}},“スコア”)),
-h(“div”,{style:{fontSize:16,color:”#ff4444”}},“VS”),
-h(“div”,{style:{textAlign:“center”,flex:1}},h(“div”,{style:{fontSize:11,color:”#ffdd00”,marginBottom:2}},oppName),h(“div”,{style:{fontSize:24,color:”#ff6666”,fontWeight:“bold”}},oppScore),h(“div”,{style:{fontSize:9,color:”#aaa”}},“スコア”))
-),
-battle.status===“active”&&h(“div”,{style:{marginBottom:6}},
-h(“div”,{style:{height:12,background:”#001100”,border:“1px solid #336633”,overflow:“hidden”,borderRadius:2,position:“relative”}},
-h(“div”,{style:{height:“100%”,width:myPct+”%”,background:”#44ff44”,transition:“width 0.5s”,borderRadius:2}}),
-h(“div”,{style:{position:“absolute”,inset:0,display:“flex”,alignItems:“center”,justifyContent:“center”,fontSize:9,color:“rgba(255,255,255,0.7)”,pointerEvents:“none”}},myPct+”% vs “+(100-myPct)+”%”)
-)
-),
-battle.status===“finished”&&h(“div”,{style:{textAlign:“center”,padding:“6px”}},
-won?h(“div”,{style:{fontSize:14,color:”#ffdd00”}},“🏆 あなたのかち！ +10🍌”):
-lost?h(“div”,{style:{fontSize:14,color:”#aaa”}},“はいぼく… -5🍌”):
-h(“div”,{style:{fontSize:14,color:”#aaa”}},“ひきわけ”)
-)
-);
+  var [cd,setCd]=useState("");
+  var isChallenger=battle.challengerId===currentUid;
+  var myScore=isChallenger?(battle.challengerScore||0):(battle.opponentScore||0);
+  var oppScore=isChallenger?(battle.opponentScore||0):(battle.challengerScore||0);
+  var myName=isChallenger?battle.challengerName:battle.opponentName;
+  var oppName=isChallenger?battle.opponentName:battle.challengerName;
+  var total=myScore+oppScore;
+  var myPct=total>0?Math.round(myScore/total*100):50;
+
+  useEffect(()=>{
+    if(battle.status!=="active"||!battle.endAt)return;
+    function tick(){
+      var end=battle.endAt.toDate?battle.endAt.toDate().getTime():battle.endAt;
+      if(Date.now()>=end&&onFinalize)onFinalize(battle.id,battle);
+      setCd(fmtCountdown(battle.endAt));
+    }
+    tick();var t=setInterval(tick,1000);return()=>clearInterval(t);
+  },[battle]);
+
+  var won=battle.status==="finished"&&battle.winnerId===currentUid;
+  var lost=battle.status==="finished"&&battle.winnerId&&battle.winnerId!==currentUid&&battle.winnerId!=="draw";
+  var draw=battle.status==="finished"&&battle.winnerId==="draw";
+
+  return h("div",{className:"dq-win",style:{padding:"10px",marginBottom:8}},
+    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}},
+      h("span",{style:{fontSize:11,color:battle.status==="active"?"#44ff44":"#aaa"}},battle.status==="active"?"⚔ バトル中！":"🏁 しゅうりょう"),
+      battle.status==="active"&&h("span",{style:{fontSize:12,color:"#ffdd00",fontWeight:"bold"}},"⏱ "+cd)
+    ),
+    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+      h("div",{style:{textAlign:"center",flex:1}},h("div",{style:{fontSize:11,color:"#ffdd00",marginBottom:2}},myName),h("div",{style:{fontSize:24,color:"#44ff44",fontWeight:"bold"}},myScore),h("div",{style:{fontSize:9,color:"#aaa"}},"スコア")),
+      h("div",{style:{fontSize:16,color:"#ff4444"}},"VS"),
+      h("div",{style:{textAlign:"center",flex:1}},h("div",{style:{fontSize:11,color:"#ffdd00",marginBottom:2}},oppName),h("div",{style:{fontSize:24,color:"#ff6666",fontWeight:"bold"}},oppScore),h("div",{style:{fontSize:9,color:"#aaa"}},"スコア"))
+    ),
+    battle.status==="active"&&h("div",{style:{marginBottom:6}},
+      h("div",{style:{height:12,background:"#001100",border:"1px solid #336633",overflow:"hidden",borderRadius:2,position:"relative"}},
+        h("div",{style:{height:"100%",width:myPct+"%",background:"#44ff44",transition:"width 0.5s",borderRadius:2}}),
+        h("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"rgba(255,255,255,0.7)",pointerEvents:"none"}},myPct+"% vs "+(100-myPct)+"%")
+      )
+    ),
+    battle.status==="finished"&&h("div",{style:{textAlign:"center",padding:"6px"}},
+      won?h("div",{style:{fontSize:14,color:"#ffdd00"}},"🏆 あなたのかち！ +10🍌"):
+      lost?h("div",{style:{fontSize:14,color:"#aaa"}},"はいぼく… -5🍌"):
+      draw?h("div",{style:{fontSize:14,color:"#aaa"}},"ひきわけ"):null
+    )
+  );
 }
 
 // ── フレンドカード ────────────────────────────────────────
 function FriendCard({fd,fid,onRemove,onBattle,battleStatus}){
-var stage=getStage(fd.level||1);
-return h(“div”,{className:“dq-win”,style:{padding:“10px 12px”,marginBottom:8}},
-h(“div”,{style:{display:“flex”,justifyContent:“space-between”,alignItems:“flex-start”,marginBottom:8}},
-h(“div”,{style:{display:“flex”,alignItems:“center”,gap:8}},
-h(“div”,{style:{width:48,height:48,overflow:“hidden”,flexShrink:0,display:“flex”,alignItems:“center”,justifyContent:“center”}},h(“img”,{src:GORILLA_IMGS[stage],style:{width:96,height:96,objectFit:“contain”,imageRendering:“pixelated”}})),
-h(“div”,null,h(“div”,{style:{fontSize:13,color:”#ffdd00”}},fd.gorillaName||“ゴリラ”),h(“div”,{style:{fontSize:10,color:”#4488ff”}},“ID: “+fid),h(“div”,{style:{fontSize:10,color:”#aaa”}},“LV”+(fd.level||1)+” 🍌”+(fd.bananas||0)))
-),
-h(“div”,{style:{display:“flex”,flexDirection:“column”,gap:4}},
-h(“button”,{className:“dq-btn”,onClick:onRemove,style:{fontSize:10,padding:“3px 7px”,color:”#ff4444”,border:“1px solid #ff4444”}},“さくじょ”),
-battleStatus===“active”
-?h(“button”,{className:“dq-btn”,style:{fontSize:10,padding:“3px 7px”,color:”#aaa”,border:“1px solid #555”,cursor:“default”}},“バトル中”)
-:h(“button”,{className:“dq-btn”,onClick:onBattle,style:{fontSize:10,padding:“3px 7px”,color:”#ff6666”,border:“1px solid #ff6666”}},“⚔ たいせん”)
-)
-),
-h(“div”,{style:{display:“flex”,justifyContent:“center”}},h(PentagonChart,{partXP:fd.partXP||{},size:150}))
-);
+  var stage=getStage(fd.level||1);
+  return h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+    h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}},
+      h("div",{style:{display:"flex",alignItems:"center",gap:8}},
+        h("div",{style:{width:48,height:48,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}},
+          h("img",{src:GORILLA_IMGS[stage],style:{width:96,height:96,objectFit:"contain",imageRendering:"pixelated"}})
+        ),
+        h("div",null,
+          h("div",{style:{fontSize:13,color:"#ffdd00"}},fd.gorillaName||"ゴリラ"),
+          h("div",{style:{fontSize:10,color:"#4488ff"}},"ID: "+fid),
+          h("div",{style:{fontSize:10,color:"#aaa"}},"LV"+(fd.level||1)+" 🍌"+(fd.bananas||0))
+        )
+      ),
+      h("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+        h("button",{className:"dq-btn",onClick:onRemove,style:{fontSize:10,padding:"3px 7px",color:"#ff4444",border:"1px solid #ff4444"}},"さくじょ"),
+        battleStatus==="active"
+          ?h("button",{className:"dq-btn",style:{fontSize:10,padding:"3px 7px",color:"#aaa",border:"1px solid #555",cursor:"default"}},"バトル中")
+          :h("button",{className:"dq-btn",onClick:onBattle,style:{fontSize:10,padding:"3px 7px",color:"#ff6666",border:"1px solid #ff6666"}},"⚔ たいせん")
+      )
+    ),
+    h("div",{style:{display:"flex",justifyContent:"center"}},h(PentagonChart,{partXP:fd.partXP||{},size:150}))
+  );
 }
 
 // ── UI部品 ──────────────────────────────────────────────
-function DQBar({value,max,color,width=“100%”}){var pct=Math.min(Math.round((value/max)*100),100);return h(“div”,{style:{width,height:10,background:”#001100”,border:“1px solid #336633”,display:“inline-block”,verticalAlign:“middle”}},h(“div”,{style:{height:“100%”,width:pct+”%”,background:color,transition:“width 0.4s”}}));}
-function Stepper({value,onChange,step=5,min=0}){return h(“div”,{style:{display:“flex”,alignItems:“center”}},h(“button”,{className:“dq-btn”,onClick:()=>onChange(Math.max(min,value-step)),style:{width:32,textAlign:“center”,padding:“4px”,fontSize:14}},“◀”),h(“span”,{style:{flex:1,textAlign:“center”,fontSize:13,color:”#ffdd00”,background:”#000011”,padding:“5px 0”,border:“2px solid #4444aa”,borderLeft:“none”,borderRight:“none”}},value),h(“button”,{className:“dq-btn”,onClick:()=>onChange(value+step),style:{width:32,textAlign:“center”,padding:“4px”,fontSize:14}},“▶”));}
-function LevelUpOverlay({level,onDone}){useEffect(()=>{var t=setTimeout(onDone,2800);return()=>clearTimeout(t);},[]);return h(“div”,{style:{position:“fixed”,inset:0,zIndex:1000,display:“flex”,alignItems:“center”,justifyContent:“center”,pointerEvents:“none”}},h(“div”,{style:{animation:“flash 0.3s ease 2”,background:“rgba(255,255,100,0.12)”,position:“absolute”,inset:0}}),h(“div”,{className:“dq-win”,style:{padding:“20px 32px”,textAlign:“center”,animation:“levelup 2.8s ease forwards”,border:“4px solid #ffdd00”}},h(“div”,{style:{fontSize:13,color:”#ffdd00”,marginBottom:8}},“✦ ✦ ✦”),h(“div”,{style:{fontSize:18,color:”#ffdd00”,lineHeight:1.8}},“レベルが あがった！”,h(“br”),h(“span”,{style:{fontSize:24,color:”#fff”}},“Lv.”+level)),h(“div”,{style:{fontSize:13,color:”#ffdd00”,marginTop:8}},“✦ ✦ ✦”)));}
-function XPPop({xp,onDone}){useEffect(()=>{var t=setTimeout(onDone,1400);return()=>clearTimeout(t);},[]);return h(“div”,{style:{position:“fixed”,top:“30%”,left:“50%”,transform:“translateX(-50%)”,zIndex:900,pointerEvents:“none”,animation:“xpPop 1.4s ease forwards”,fontSize:20,color:”#ffdd00”,textShadow:“0 0 8px #ffdd00”}},“＋”+xp+“XP”);}
-function DegradePop({xp,onDone}){useEffect(()=>{var t=setTimeout(onDone,2500);return()=>clearTimeout(t);},[]);return h(“div”,{style:{position:“fixed”,top:“25%”,left:“50%”,transform:“translateX(-50%)”,zIndex:900,pointerEvents:“none”,animation:“degrade 2.5s ease forwards”,textAlign:“center”}},h(“div”,{style:{fontSize:16,color:”#ff4444”,textShadow:“0 0 8px #ff0000”}},“▼ “+xp+“XP げんしょう”),h(“div”,{style:{fontSize:11,color:”#ff8888”,marginTop:4}},“さぼりは禁物！”));}
+function DQBar({value,max,color,width="100%"}){var pct=Math.min(Math.round((value/max)*100),100);return h("div",{style:{width,height:10,background:"#001100",border:"1px solid #336633",display:"inline-block",verticalAlign:"middle"}},h("div",{style:{height:"100%",width:pct+"%",background:color,transition:"width 0.4s"}}));}
+function Stepper({value,onChange,step=5,min=0}){return h("div",{style:{display:"flex",alignItems:"center"}},h("button",{className:"dq-btn",onClick:()=>onChange(Math.max(min,value-step)),style:{width:32,textAlign:"center",padding:"4px",fontSize:14}},"◀"),h("span",{style:{flex:1,textAlign:"center",fontSize:13,color:"#ffdd00",background:"#000011",padding:"5px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},value),h("button",{className:"dq-btn",onClick:()=>onChange(value+step),style:{width:32,textAlign:"center",padding:"4px",fontSize:14}},"▶"));}
+function LevelUpOverlay({level,onDone}){useEffect(()=>{var t=setTimeout(onDone,2800);return()=>clearTimeout(t);},[]);return h("div",{style:{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}},h("div",{style:{animation:"flash 0.3s ease 2",background:"rgba(255,255,100,0.12)",position:"absolute",inset:0}}),h("div",{className:"dq-win",style:{padding:"20px 32px",textAlign:"center",animation:"levelup 2.8s ease forwards",border:"4px solid #ffdd00"}},h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:8}},"✦ ✦ ✦"),h("div",{style:{fontSize:18,color:"#ffdd00",lineHeight:1.8}},"レベルが あがった！",h("br"),h("span",{style:{fontSize:24,color:"#fff"}},"Lv."+level)),h("div",{style:{fontSize:13,color:"#ffdd00",marginTop:8}},"✦ ✦ ✦")));}
+function XPPop({xp,onDone}){useEffect(()=>{var t=setTimeout(onDone,1400);return()=>clearTimeout(t);},[]);return h("div",{style:{position:"fixed",top:"30%",left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",animation:"xpPop 1.4s ease forwards",fontSize:20,color:"#ffdd00",textShadow:"0 0 8px #ffdd00"}},"＋"+xp+"XP");}
+function DegradePop({xp,onDone}){useEffect(()=>{var t=setTimeout(onDone,2500);return()=>clearTimeout(t);},[]);return h("div",{style:{position:"fixed",top:"25%",left:"50%",transform:"translateX(-50%)",zIndex:900,pointerEvents:"none",animation:"degrade 2.5s ease forwards",textAlign:"center"}},h("div",{style:{fontSize:16,color:"#ff4444",textShadow:"0 0 8px #ff0000"}},"▼ "+xp+"XP げんしょう"),h("div",{style:{fontSize:11,color:"#ff8888",marginTop:4}},"さぼりは禁物！"));}
+
+// ── バナナスワイプ ──────────────────────────────────────
 function BananaSwipe({onSlide}){
-var[x,setX]=useState(0),[done,setDone]=useState(false),[drag,setDrag]=useState(false);
-var startX=useRef(0);var trackW=260,thumbW=60,maxX=trackW-thumbW;
-var onStart=e=>{if(done)return;e.preventDefault();setDrag(true);startX.current=(e.touches?e.touches[0].clientX:e.clientX)-x;};
-var onMove=e=>{if(!drag||done)return;e.preventDefault();var nx=Math.min(maxX,Math.max(0,(e.touches?e.touches[0].clientX:e.clientX)-startX.current));setX(nx);if(nx>=maxX-4){setDone(true);setDrag(false);setTimeout(onSlide,300);}};
-return h(“div”,{style:{position:“fixed”,inset:0,zIndex:2400,background:“rgba(0,0,0,0.88)”,display:“flex”,alignItems:“center”,justifyContent:“center”}},
-h(“div”,{className:“dq-win”,style:{padding:“24px 20px”,textAlign:“center”,border:“4px solid #ffdd00”,width:320}},
-h(“div”,{style:{fontSize:14,color:”#ffdd00”,marginBottom:6}},“★ ゴリラのきぶんがよさそうだぞ？”),
-h(“div”,{style:{fontSize:11,color:”#aaa”,marginBottom:20}},“バナナをスライドしてルーレットをまわせ！”),
-h(“div”,{style:{width:trackW,height:56,background:”#000022”,border:“3px solid #4444aa”,borderRadius:28,margin:“0 auto”,position:“relative”,overflow:“hidden”,cursor:“pointer”,touchAction:“none”},onMouseDown:onStart,onMouseMove:onMove,onMouseUp:()=>setDrag(false),onMouseLeave:()=>setDrag(false),onTouchStart:onStart,onTouchMove:onMove,onTouchEnd:()=>setDrag(false)},
-h(“div”,{style:{position:“absolute”,inset:0,display:“flex”,alignItems:“center”,justifyContent:“center”,fontSize:11,color:”#444”,userSelect:“none”,pointerEvents:“none”}},done?””:“→ →  スライド  → →”),
-h(“div”,{style:{position:“absolute”,top:4,left:4+x,width:thumbW-8,height:44,borderRadius:22,background:done?”#44ff44”:”#ffdd00”,display:“flex”,alignItems:“center”,justifyContent:“center”,fontSize:28,userSelect:“none”,pointerEvents:“none”}},done?“✓”:“🍌”)
-)
-)
-);
+  var [x,setX]=useState(0),[done,setDone]=useState(false),[drag,setDrag]=useState(false);
+  var startX=useRef(0);var trackW=260,thumbW=60,maxX=trackW-thumbW;
+  var onStart=e=>{if(done)return;e.preventDefault();setDrag(true);startX.current=(e.touches?e.touches[0].clientX:e.clientX)-x;};
+  var onMove=e=>{if(!drag||done)return;e.preventDefault();var nx=Math.min(maxX,Math.max(0,(e.touches?e.touches[0].clientX:e.clientX)-startX.current));setX(nx);if(nx>=maxX-4){setDone(true);setDrag(false);setTimeout(onSlide,300);}};
+  var onEnd=()=>setDrag(false);
+  return h("div",{style:{position:"fixed",inset:0,zIndex:2400,background:"rgba(0,0,0,0.88)",display:"flex",alignItems:"center",justifyContent:"center"}},
+    h("div",{className:"dq-win",style:{padding:"24px 20px",textAlign:"center",border:"4px solid #ffdd00",width:320}},
+      h("div",{style:{fontSize:14,color:"#ffdd00",marginBottom:6}},"★ ゴリラのきぶんがよさそうだぞ？"),
+      h("div",{style:{fontSize:11,color:"#aaa",marginBottom:20}},"バナナをスライドしてルーレットをまわせ！"),
+      h("div",{style:{width:trackW,height:56,background:"#000022",border:"3px solid #4444aa",borderRadius:28,margin:"0 auto",position:"relative",overflow:"hidden",cursor:"pointer",touchAction:"none"},onMouseDown:onStart,onMouseMove:onMove,onMouseUp:onEnd,onMouseLeave:onEnd,onTouchStart:onStart,onTouchMove:onMove,onTouchEnd:onEnd},
+        h("div",{style:{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#444",userSelect:"none",pointerEvents:"none"}},done?"":"→ →  スライド  → →"),
+        h("div",{style:{position:"absolute",top:4,left:4+x,width:thumbW-8,height:44,borderRadius:22,background:done?"#44ff44":"#ffdd00",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,userSelect:"none",pointerEvents:"none"}},done?"✓":"🍌")
+      )
+    )
+  );
 }
+
+// ── ルーレット ──────────────────────────────────────────
 function RouletteOverlay({onResult}){
-var[phase,setPhase]=useState(0),[result,setResult]=useState(null),[idx,setIdx]=useState(0);
-var t=useRef(null);
-useEffect(()=>{var count=0,speed=80;function spin(){setIdx(i=>(i+1)%ROULETTE_TABLE.length);count++;speed=Math.min(speed+8,400);if(count<25)t.current=setTimeout(spin,speed);else{var r=rollRoulette();setResult(r);setPhase(2);}}t.current=setTimeout(spin,speed);return()=>clearTimeout(t.current);},[]);
-var cur=ROULETTE_TABLE[idx];
-return h(“div”,{style:{position:“fixed”,inset:0,zIndex:2500,background:“rgba(0,0,0,0.85)”,display:“flex”,alignItems:“center”,justifyContent:“center”,touchAction:“auto”}},
-h(“div”,{className:“dq-win”,style:{padding:“24px 32px”,textAlign:“center”,border:“4px solid #ffdd00”,minWidth:280}},
-h(“div”,{style:{fontSize:13,color:”#ffdd00”,marginBottom:12}},“★ ゴリラのきぶんがいい！★”),
-phase<2?h(“div”,{style:{animation:“rouletteSpin 0.3s infinite”}},h(“div”,{style:{fontSize:36,color:cur.color,marginBottom:8}},“✦”),h(“div”,{style:{fontSize:28,color:cur.color}},“けいけんち “+cur.label),h(“div”,{style:{fontSize:12,color:”#aaa”,marginTop:8}},“ルーレット中…”)):
-h(“div”,null,h(“div”,{style:{fontSize:36,color:result.color,marginBottom:8}},“★”),h(“div”,{style:{fontSize:28,color:result.color}},result.label),h(“div”,{style:{fontSize:13,color:”#fff”,marginTop:8,marginBottom:16}},“けいけんちが “+result.label+” になる！”),h(“button”,{onClick:e=>{e.stopPropagation();onResult(result);},style:{width:“100%”,textAlign:“center”,padding:“14px”,color:”#ffdd00”,border:“3px solid #ffdd00”,fontSize:15,background:”#000066”,cursor:“pointer”,fontFamily:”‘DotGothic16’,monospace”,zIndex:2600}},“▶▶ トレーニングかいし！”))
-)
-);
+  var [phase,setPhase]=useState(0),[result,setResult]=useState(null),[idx,setIdx]=useState(0);
+  var t=useRef(null);
+  useEffect(()=>{
+    var count=0,speed=80;
+    function spin(){setIdx(i=>(i+1)%ROULETTE_TABLE.length);count++;speed=Math.min(speed+8,400);if(count<25){t.current=setTimeout(spin,speed);}else{var r=rollRoulette();setResult(r);setPhase(2);}}
+    t.current=setTimeout(spin,speed);return()=>clearTimeout(t.current);
+  },[]);
+  var cur=ROULETTE_TABLE[idx];
+  return h("div",{style:{position:"fixed",inset:0,zIndex:2500,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",touchAction:"auto"}},
+    h("div",{className:"dq-win",style:{padding:"24px 32px",textAlign:"center",border:"4px solid #ffdd00",minWidth:280}},
+      h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:12}},"★ ゴリラのきぶんがいい！★"),
+      phase<2?h("div",{style:{animation:"rouletteSpin 0.3s infinite"}},h("div",{style:{fontSize:36,color:cur.color,marginBottom:8}},"✦"),h("div",{style:{fontSize:28,color:cur.color,fontWeight:"bold"}},"けいけんち "+cur.label),h("div",{style:{fontSize:12,color:"#aaa",marginTop:8}},"ルーレット中...")):
+      h("div",null,h("div",{style:{fontSize:36,color:result.color,marginBottom:8}},"★"),h("div",{style:{fontSize:28,color:result.color}},result.label),h("div",{style:{fontSize:13,color:"#fff",marginTop:8,marginBottom:16}},"けいけんちが "+result.label+" になる！"),h("button",{onClick:e=>{e.stopPropagation();onResult(result);},style:{width:"100%",textAlign:"center",padding:"14px",color:"#ffdd00",border:"3px solid #ffdd00",fontSize:15,background:"#000066",cursor:"pointer",fontFamily:"'DotGothic16',monospace",zIndex:2600}},"▶▶ トレーニングかいし！"))
+    )
+  );
 }
+
+// ── メニューエディタ ────────────────────────────────────
 function MenuEditor({menu,onSave,onClose}){
-var[name,setName]=useState(menu.name),[items,setItems]=useState(menu.items.map(i=>({…i}))),[addPart,setAddPart]=useState(“胸”);
-var upd=(idx,k,v)=>setItems(prev=>{var a=prev.map(x=>({…x}));a[idx][k]=v;return a;});
-var del=idx=>setItems(prev=>prev.filter((_,i)=>i!==idx));
-return h(“div”,{style:{position:“fixed”,inset:0,zIndex:3000,background:“rgba(0,0,0,0.9)”,overflowY:“auto”,padding:“12px”}},
-h(“div”,{className:“dq-win”,style:{padding:“12px”,maxWidth:430,margin:“0 auto”}},
-h(“div”,{style:{fontSize:14,color:”#ffdd00”,marginBottom:12}},“▼ メニューへんしゅう”),
-h(“input”,{className:“dq-input”,value:name,onChange:e=>setName(e.target.value),style:{width:“100%”,fontSize:14,marginBottom:10}}),
-items.map((item,idx)=>{var ip=getPartForEx(item.exercise);return h(“div”,{key:idx,className:“dq-win”,style:{padding:“8px”,marginBottom:8,borderColor:”#4444aa”}},h(“div”,{style:{display:“flex”,justifyContent:“space-between”,marginBottom:6}},h(“div”,{style:{fontSize:11,color:”#aaa”}},“しゅもく “+(idx+1)),h(“button”,{className:“dq-btn”,onClick:()=>del(idx),style:{fontSize:11,padding:“2px 8px”,color:”#ff4444”,border:“1px solid #ff4444”}},“✕”)),h(“div”,{style:{display:“flex”,gap:3,marginBottom:6}},PARTS.map(p=>h(“button”,{key:p,className:“dq-btn “+(ip===p?“active”:””),onClick:()=>upd(idx,“exercise”,PRESETS[p][0]),style:{flex:1,fontSize:10,padding:“4px 2px”,textAlign:“center”,color:ip===p?PART_COLOR[p]:”#aaa”,borderBottom:ip===p?“2px solid “+PART_COLOR[p]:“2px solid transparent”}},p))),h(“select”,{className:“dq-input”,value:item.exercise,onChange:e=>upd(idx,“exercise”,e.target.value),style:{width:“100%”,marginBottom:6,fontSize:12}},PRESETS[ip].map(e=>h(“option”,{key:e,value:e},e))),h(“div”,{style:{display:“grid”,gridTemplateColumns:“1fr 1fr 1fr”,gap:6}},[[“じゅうりょう”,item.weight,“weight”,5,0],[“かいすう”,item.reps,“reps”,1,1],[“セット”,item.sets,“sets”,1,1]].map(f=>h(“div”,{key:f[0]},h(“div”,{style:{fontSize:9,color:”#aaa”,marginBottom:2,textAlign:“center”}},f[0]),h(“div”,{style:{display:“flex”}},h(“button”,{className:“dq-btn”,onClick:()=>upd(idx,f[2],Math.max(f[4],f[1]-f[3])),style:{width:26,textAnchor:“center”,padding:“2px”,fontSize:12}},“◀”),h(“span”,{style:{flex:1,textAlign:“center”,fontSize:12,color:”#ffdd00”,background:”#000011”,padding:“3px 0”,border:“2px solid #4444aa”,borderLeft:“none”,borderRight:“none”}},f[1]),h(“button”,{className:“dq-btn”,onClick:()=>upd(idx,f[2],f[1]+f[3]),style:{width:26,textAlign:“center”,padding:“2px”,fontSize:12}},“▶”)))))));
-}),
-items.length<10&&h(“div”,{className:“dq-win”,style:{padding:“8px”,marginBottom:8,borderColor:”#44ff44”}},h(“div”,{style:{fontSize:11,color:”#44ff44”,marginBottom:6}},“▼ しゅもくをついか”),h(“div”,{style:{display:“flex”,gap:3,marginBottom:6}},PARTS.map(p=>h(“button”,{key:p,className:“dq-btn “+(addPart===p?“active”:””),onClick:()=>setAddPart(p),style:{flex:1,fontSize:10,padding:“4px 2px”,textAlign:“center”,color:addPart===p?PART_COLOR[p]:”#aaa”,borderBottom:addPart===p?“2px solid “+PART_COLOR[p]:“2px solid transparent”}},p))),h(“div”,{style:{display:“flex”,flexWrap:“wrap”,gap:4}},PRESETS[addPart].map(e=>h(“button”,{key:e,className:“dq-btn”,onClick:()=>setItems(prev=>[…prev,{exercise:e,weight:60,reps:10,sets:3}]),style:{fontSize:11,padding:“5px 8px”,color:”#44ff44”,border:“1px solid #44ff44”}},e)))),
-h(“div”,{style:{display:“flex”,gap:8}},h(“button”,{className:“dq-btn”,onClick:onClose,style:{flex:1,textAlign:“center”,padding:“10px”,color:”#ff4444”,border:“2px solid #ff4444”}},“キャンセル”),h(“button”,{className:“dq-btn”,onClick:()=>onSave({name,items}),style:{flex:1,textAlign:“center”,padding:“10px”,color:”#ffdd00”,border:“2px solid #ffdd00”}},“ほぞん”))
-)
-);
+  var [name,setName]=useState(menu.name);
+  var [items,setItems]=useState(menu.items.map(i=>({...i})));
+  var [addPart,setAddPart]=useState("胸");
+  var upd=(idx,k,v)=>setItems(prev=>{var a=prev.map(x=>({...x}));a[idx][k]=v;return a;});
+  var del=idx=>setItems(prev=>prev.filter((_,i)=>i!==idx));
+  return h("div",{style:{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,0.9)",overflowY:"auto",padding:"12px"}},
+    h("div",{className:"dq-win",style:{padding:"12px",maxWidth:430,margin:"0 auto"}},
+      h("div",{style:{fontSize:14,color:"#ffdd00",marginBottom:12}},"▼ メニューへんしゅう"),
+      h("input",{className:"dq-input",value:name,onChange:e=>setName(e.target.value),style:{width:"100%",fontSize:14,marginBottom:10}}),
+      items.map((item,idx)=>{
+        var ip=getPartForEx(item.exercise);
+        return h("div",{key:idx,className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#4444aa"}},
+          h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:6}},h("div",{style:{fontSize:11,color:"#aaa"}},"しゅもく "+(idx+1)),h("button",{className:"dq-btn",onClick:()=>del(idx),style:{fontSize:11,padding:"2px 8px",color:"#ff4444",border:"1px solid #ff4444"}},"✕")),
+          h("div",{style:{display:"flex",gap:3,marginBottom:6}},PARTS.map(p=>h("button",{key:p,className:"dq-btn "+(ip===p?"active":""),onClick:()=>upd(idx,"exercise",PRESETS[p][0]),style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:ip===p?PART_COLOR[p]:"#aaa",borderBottom:ip===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p))),
+          h("select",{className:"dq-input",value:item.exercise,onChange:e=>upd(idx,"exercise",e.target.value),style:{width:"100%",marginBottom:6,fontSize:12}},PRESETS[ip].map(e=>h("option",{key:e,value:e},e))),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}},
+            [["じゅうりょう",item.weight,"weight",5,0],["かいすう",item.reps,"reps",1,1],["セット",item.sets,"sets",1,1]].map(f=>h("div",{key:f[0]},h("div",{style:{fontSize:9,color:"#aaa",marginBottom:2,textAlign:"center"}},f[0]),h("div",{style:{display:"flex"}},h("button",{className:"dq-btn",onClick:()=>upd(idx,f[2],Math.max(f[4],f[1]-f[3])),style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"◀"),h("span",{style:{flex:1,textAlign:"center",fontSize:12,color:"#ffdd00",background:"#000011",padding:"3px 0",border:"2px solid #4444aa",borderLeft:"none",borderRight:"none"}},f[1]),h("button",{className:"dq-btn",onClick:()=>upd(idx,f[2],f[1]+f[3]),style:{width:26,textAlign:"center",padding:"2px",fontSize:12}},"▶"))))
+          )
+        );
+      }),
+      items.length<10&&h("div",{className:"dq-win",style:{padding:"8px",marginBottom:8,borderColor:"#44ff44"}},
+        h("div",{style:{fontSize:11,color:"#44ff44",marginBottom:6}},"▼ しゅもくをついか"),
+        h("div",{style:{display:"flex",gap:3,marginBottom:6}},PARTS.map(p=>h("button",{key:p,className:"dq-btn "+(addPart===p?"active":""),onClick:()=>setAddPart(p),style:{flex:1,fontSize:10,padding:"4px 2px",textAlign:"center",color:addPart===p?PART_COLOR[p]:"#aaa",borderBottom:addPart===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p))),
+        h("div",{style:{display:"flex",flexWrap:"wrap",gap:4}},PRESETS[addPart].map(e=>h("button",{key:e,className:"dq-btn",onClick:()=>setItems(prev=>[...prev,{exercise:e,weight:60,reps:10,sets:3}]),style:{fontSize:11,padding:"5px 8px",color:"#44ff44",border:"1px solid #44ff44"}},e)))
+      ),
+      h("div",{style:{display:"flex",gap:8}},h("button",{className:"dq-btn",onClick:onClose,style:{flex:1,textAlign:"center",padding:"10px",color:"#ff4444",border:"2px solid #ff4444"}},"キャンセル"),h("button",{className:"dq-btn",onClick:()=>onSave({name,items}),style:{flex:1,textAlign:"center",padding:"10px",color:"#ffdd00",border:"2px solid #ffdd00"}},"ほぞん"))
+    )
+  );
 }
+
+// ── 名前編集 ──────────────────────────────────────────────
 function NameEditor({current,onSave,onClose}){
-var[name,setName]=useState(current||“ゴリラ”);
-return h(“div”,{style:{position:“fixed”,inset:0,zIndex:3000,background:“rgba(0,0,0,0.85)”,display:“flex”,alignItems:“center”,justifyContent:“center”}},h(“div”,{className:“dq-win”,style:{padding:“20px”,width:280,textAlign:“center”}},h(“div”,{style:{fontSize:13,color:”#ffdd00”,marginBottom:12}},“▼ なまえをつける”),h(“input”,{className:“dq-input”,value:name,onChange:e=>setName(e.target.value),maxLength:10,style:{width:“100%”,fontSize:15,textAlign:“center”,marginBottom:12}}),h(“div”,{style:{display:“flex”,gap:8}},h(“button”,{className:“dq-btn”,onClick:onClose,style:{flex:1,textAlign:“center”,padding:“10px”,color:”#ff4444”,border:“2px solid #ff4444”}},“キャンセル”),h(“button”,{className:“dq-btn”,onClick:()=>onSave(name),style:{flex:1,textAlign:“center”,padding:“10px”,color:”#ffdd00”,border:“2px solid #ffdd00”}},“ほぞん”))));
+  var [name,setName]=useState(current||"ゴリラ");
+  return h("div",{style:{position:"fixed",inset:0,zIndex:3000,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center"}},
+    h("div",{className:"dq-win",style:{padding:"20px",width:280,textAlign:"center"}},
+      h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:12}},"▼ なまえをつける"),
+      h("input",{className:"dq-input",value:name,onChange:e=>setName(e.target.value),maxLength:10,style:{width:"100%",fontSize:15,textAlign:"center",marginBottom:12}}),
+      h("div",{style:{display:"flex",gap:8}},h("button",{className:"dq-btn",onClick:onClose,style:{flex:1,textAlign:"center",padding:"10px",color:"#ff4444",border:"2px solid #ff4444"}},"キャンセル"),h("button",{className:"dq-btn",onClick:()=>onSave(name),style:{flex:1,textAlign:"center",padding:"10px",color:"#ffdd00",border:"2px solid #ffdd00"}},"ほぞん"))
+    )
+  );
 }
+
+// ── ログイン画面 ──────────────────────────────────────────
 function LoginScreen(){
-var[loading,setLoading]=useState(false),[err,setErr]=useState(””);
-async function go(){setLoading(true);setErr(””);try{await signInWithPopup(auth,new GoogleAuthProvider());}catch(e){setErr(“ログインに失敗しました”);}setLoading(false);}
-return h(“div”,{style:{minHeight:“100vh”,display:“flex”,flexDirection:“column”,alignItems:“center”,justifyContent:“center”,padding:24,background:”#0a0a1a”}},h(“div”,{style:{textAlign:“center”,marginBottom:32}},h(“div”,{style:{fontSize:24,color:”#ffdd00”,letterSpacing:2,marginBottom:8}},“★ GORILLA QUEST ★”),h(“div”,{style:{fontSize:12,color:”#aaa”}},“トレーニングでゴリラをそだてよう！”)),h(“div”,{style:{fontSize:64,marginBottom:24}},“🦍”),h(“div”,{className:“dq-win”,style:{padding:“24px”,width:“100%”,maxWidth:320,textAlign:“center”}},h(“div”,{style:{fontSize:13,color:”#ffdd00”,marginBottom:16}},“Googleでログイン”),h(“button”,{className:“dq-btn”,onClick:go,style:{width:“100%”,textAlign:“center”,padding:“14px”,color:”#fff”,border:“2px solid #4488ff”,fontSize:14}},loading?“ログイン中…”:“🔵 Googleでログイン”),err&&h(“div”,{style:{fontSize:11,color:”#ff4444”,marginTop:8}},err)));
+  var [loading,setLoading]=useState(false),[err,setErr]=useState("");
+  async function go(){
+    setLoading(true);setErr("");
+    try{await signInWithPopup(auth,new GoogleAuthProvider());}
+    catch(e){setErr("ログインに失敗しました");}
+    setLoading(false);
+  }
+  return h("div",{style:{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,background:"#0a0a1a"}},
+    h("div",{style:{textAlign:"center",marginBottom:32}},h("div",{style:{fontSize:24,color:"#ffdd00",letterSpacing:2,marginBottom:8}},"★ GORILLA QUEST ★"),h("div",{style:{fontSize:12,color:"#aaa"}},"トレーニングでゴリラをそだてよう！")),
+    h("div",{style:{fontSize:64,marginBottom:24}},"🦍"),
+    h("div",{className:"dq-win",style:{padding:"24px",width:"100%",maxWidth:320,textAlign:"center"}},
+      h("div",{style:{fontSize:13,color:"#ffdd00",marginBottom:16}},"Googleでログイン"),
+      h("button",{className:"dq-btn",onClick:go,style:{width:"100%",textAlign:"center",padding:"14px",color:"#fff",border:"2px solid #4488ff",fontSize:14}},loading?"ログイン中...":"🔵 Googleでログイン"),
+      err&&h("div",{style:{fontSize:11,color:"#ff4444",marginTop:8}},err)
+    )
+  );
 }
 
 // ══════════════════════════════════════════════════════════
 // メインアプリ
 // ══════════════════════════════════════════════════════════
+var INIT={totalXP:0,partXP:{},exercises:{},sessions:[],totalSessions:0,maxStreak:0,level:1,totalProtein:0,nightRecord:false,morningRecord:false,noonRecord:false,prCount:0,totalSets:0,maxWeight:0,maxDailySessions:0,totalCheckIns:0,workoutLog:[],menuRecords:0};
+
 function App(){
-var[authUser,setAuthUser]=useState(null);
-var[authLoading,setAuthLoading]=useState(true);
-var[userDoc,setUserDoc]=useState(null); // Firestoreのユーザードキュメント
-var[data,setData]=useState(INIT);       // ゲームデータ（Firestoreがマスター）
-var[gqId,setGqId]=useState(””);
-var[dataReady,setDataReady]=useState(false); // Firestoreからの復元完了フラグ
-var[tab,setTab]=useState(“log”);
-var[gorillaName,setGorillaName]=useState(“ゴリラ”);
-var[part,setPart]=useState(“胸”);
-var[exercise,setExercise]=useState(PRESETS[“胸”][0]);
-var[weight,setWeight]=useState(60);
-var[reps,setReps]=useState(10);
-var[sets,setSets]=useState(3);
-var[lvAnim,setLvAnim]=useState(null);
-var[xpAnim,setXpAnim]=useState(null);
-var[degradeAnim,setDegradeAnim]=useState(null);
-var[showReset,setShowReset]=useState(false);
-var[logMode,setLogMode]=useState(“menu”);
-var[selMenu,setSelMenu]=useState(0);
-var[editMenu,setEditMenu]=useState(null);
-var[showNameEditor,setShowNameEditor]=useState(false);
-var[showRoulette,setShowRoulette]=useState(false);
-var[showBanana,setShowBanana]=useState(false);
-var[xpMult,setXpMult]=useState(1);
-var[checkIn,setCheckIn]=useState(()=>{try{var c=JSON.parse(localStorage.getItem(CK)||“null”);return c&&(Date.now()-c.startTime<VALID_MS)?c:null;}catch(e){return null;}});
-var[remaining,setRemaining]=useState(null);
-var[menus,setMenus]=useState(DEFAULT_MENUS);
-var[friends,setFriends]=useState([]);
-var[friendSearch,setFriendSearch]=useState(””);
-var[friendResult,setFriendResult]=useState(null);
-var[friendLoading,setFriendLoading]=useState(false);
-var[friendDetails,setFriendDetails]=useState({});
-var[battles,setBattles]=useState([]);
-var[resetAt,setResetAt]=useState(null); // リセット日時（バトル履歴フィルタ用）
-var timerRef=useRef(null);
-var finalizedRef=useRef(new Set());
+  // ── 認証 ──
+  var [authUser,setAuthUser]=useState(null);
+  var [authLoading,setAuthLoading]=useState(true);
+  // Firestoreのユーザードキュメント（バナナ等）
+  var [userDoc,setUserDoc]=useState(null);
+  // ゲームデータ（localStorage）
+  var [data,setData]=useState(()=>{try{return JSON.parse(localStorage.getItem(SK)||"null")||INIT;}catch(e){return INIT;}});
+  // GQ ID（認証ベース）
+  var [gqId,setGqId]=useState("");
+  // UI
+  var [tab,setTab]=useState("log");
+  var [gorillaName,setGorillaName]=useState(()=>localStorage.getItem(NK)||"ゴリラ");
+  var [part,setPart]=useState("胸");
+  var [exercise,setExercise]=useState(PRESETS["胸"][0]);
+  var [weight,setWeight]=useState(60);
+  var [reps,setReps]=useState(10);
+  var [sets,setSets]=useState(3);
+  var [lvAnim,setLvAnim]=useState(null);
+  var [xpAnim,setXpAnim]=useState(null);
+  var [degradeAnim,setDegradeAnim]=useState(null);
+  var [showReset,setShowReset]=useState(false);
+  var [logMode,setLogMode]=useState("menu");
+  var [selMenu,setSelMenu]=useState(0);
+  var [editMenu,setEditMenu]=useState(null);
+  var [showNameEditor,setShowNameEditor]=useState(false);
+  var [showRoulette,setShowRoulette]=useState(false);
+  var [showBanana,setShowBanana]=useState(false);
+  var [xpMult,setXpMult]=useState(1);
+  var [checkIn,setCheckIn]=useState(()=>{try{var c=JSON.parse(localStorage.getItem(CK)||"null");return c&&(Date.now()-c.startTime<VALID_MS)?c:null;}catch(e){return null;}});
+  var [remaining,setRemaining]=useState(null);
+  var [menus,setMenus]=useState(()=>{try{return JSON.parse(localStorage.getItem(MK)||"null")||DEFAULT_MENUS;}catch(e){return DEFAULT_MENUS;}});
+  var [friends,setFriends]=useState(()=>{try{return JSON.parse(localStorage.getItem(FK)||"null")||[];}catch(e){return[];}});
+  var [friendSearch,setFriendSearch]=useState("");
+  var [friendResult,setFriendResult]=useState(null);
+  var [friendLoading,setFriendLoading]=useState(false);
+  var [friendDetails,setFriendDetails]=useState({});
+  var [battles,setBattles]=useState([]);
+  var timerRef=useRef(null);
+  var finalizedRef=useRef(new Set()); // 二重finalize防止
 
-// ── 認証監視＋Firestoreからデータ復元 ──────────────────
-useEffect(()=>{
-return onAuthStateChanged(auth,async u=>{
-setAuthUser(u);
-if(u){
-// Firestoreからデータ復元（マスターデータ）
-var{userData,gameData}=await loadUserFromFirestore(u.uid);
-// Firestoreのデータを優先してStateに反映
-setData(gameData);
-setUserDoc(userData);
-setGqId(userData.gqId||makeGQId(u.uid));
-setGorillaName(userData.gorillaName||“ゴリラ”);
-setResetAt(userData.resetAt||null);
-// メニュー・フレンドはlocalStorageから（個人設定）
-try{var m=JSON.parse(localStorage.getItem(MK)||“null”);if(m)setMenus(m);}catch(e){}
-try{var f=JSON.parse(localStorage.getItem(FK)||“null”);if(f)setFriends(f);}catch(e){}
-// localStorageにもキャッシュ
-localStorage.setItem(SK,JSON.stringify(gameData));
-localStorage.setItem(NK,userData.gorillaName||“ゴリラ”);
-setDataReady(true);
-}else{
-setDataReady(false);
-}
-setAuthLoading(false);
-});
-},[]);
+  // ── 認証監視 ──────────────────────────────────────────
+  useEffect(()=>{
+    return onAuthStateChanged(auth,async u=>{
+      setAuthUser(u);
+      if(u){
+        var gname=localStorage.getItem(NK)||"ゴリラ";
+        var ud=await ensureUserDoc(u.uid,gname);
+        setUserDoc(ud);
+        setGqId(ud.gqId||makeGQId(u.uid));
+        // gorillaNameをFirestoreに同期
+        if(ud.gorillaName&&ud.gorillaName!==gname){
+          setGorillaName(ud.gorillaName);
+          localStorage.setItem(NK,ud.gorillaName);
+        }
+      }
+      setAuthLoading(false);
+    });
+  },[]);
 
-// Firestoreユーザードキュメントのリアルタイム監視（バナナ更新用）
-useEffect(()=>{
-if(!authUser)return;
-return onSnapshot(doc(db,“users”,authUser.uid),snap=>{if(snap.exists())setUserDoc(snap.data());});
-},[authUser]);
+  // ── バトルリアルタイム監視 ──────────────────────────
+  useEffect(()=>{
+    if(!authUser)return;
+    var map={};
+    var order={active:0,finished:1};
+    var refresh=()=>setBattles(Object.values(map).sort((a,b)=>(order[a.status]??2)-(order[b.status]??2)));
+    var u1=onSnapshot(query(collection(db,"battles"),where("challengerId","==",authUser.uid)),s=>{s.docs.forEach(d=>{map[d.id]={id:d.id,...d.data()};});refresh();});
+    var u2=onSnapshot(query(collection(db,"battles"),where("opponentId","==",authUser.uid)),s=>{s.docs.forEach(d=>{map[d.id]={id:d.id,...d.data()};});refresh();});
+    return()=>{u1();u2();};
+  },[authUser]);
 
-// バトルリアルタイム監視（resetAt以降のみ表示）
-useEffect(()=>{
-if(!authUser)return;
-var map={};
-var order={active:0,finished:1};
-var refresh=()=>{
-var all=Object.values(map);
-// resetAt以降に作成されたバトルのみ表示
-if(resetAt){
-var resetMs=resetAt.toDate?resetAt.toDate().getTime():new Date(resetAt).getTime();
-all=all.filter(b=>{var cat=b.createdAt?.toDate?b.createdAt.toDate().getTime():0;return cat>=resetMs;});
-}
-setBattles(all.sort((a,b)=>(order[a.status]??2)-(order[b.status]??2)));
-};
-var u1=onSnapshot(query(collection(db,“battles”),where(“challengerId”,”==”,authUser.uid)),s=>{s.docs.forEach(d=>{map[d.id]={id:d.id,…d.data()};});refresh();});
-var u2=onSnapshot(query(collection(db,“battles”),where(“opponentId”,”==”,authUser.uid)),s=>{s.docs.forEach(d=>{map[d.id]={id:d.id,…d.data()};});refresh();});
-return()=>{u1();u2();};
-},[authUser,resetAt]);
+  // Firestoreユーザードキュメントのリアルタイム監視（バナナ更新用）
+  useEffect(()=>{
+    if(!authUser)return;
+    return onSnapshot(doc(db,"users",authUser.uid),snap=>{if(snap.exists())setUserDoc(snap.data());});
+  },[authUser]);
 
-// チェックインタイマー
-useEffect(()=>{
-if(!checkIn){setRemaining(null);return;}
-function tick(){var left=checkIn.startTime+VALID_MS-Date.now();if(left<=0){setCheckIn(null);localStorage.removeItem(CK);setRemaining(null);return;}setRemaining(left);}
-tick();timerRef.current=setInterval(tick,1000);return()=>clearInterval(timerRef.current);
-},[checkIn]);
+  // チェックインタイマー
+  useEffect(()=>{
+    if(!checkIn){setRemaining(null);return;}
+    function tick(){var left=checkIn.startTime+VALID_MS-Date.now();if(left<=0){setCheckIn(null);localStorage.removeItem(CK);setRemaining(null);return;}setRemaining(left);}
+    tick();timerRef.current=setInterval(tick,1000);return()=>clearInterval(timerRef.current);
+  },[checkIn]);
 
-// 退化チェック（データ復元後のみ実行）
-useEffect(()=>{
-if(!dataReady)return;
-var lastDate=data.sessions?.slice(-1)[0]||null;
-if(!lastDate)return;
-var penalty=calcDegradePenalty(lastDate);
-if(penalty>0&&data.totalXP>0){var nd={…data,totalXP:Math.max(0,data.totalXP-penalty),level:levelInfo(Math.max(0,data.totalXP-penalty)).level};save(nd);setDegradeAnim(penalty);}
-},[dataReady]);
+  // 退化チェック
+  useEffect(()=>{
+    var lastDate=data.sessions?.slice(-1)[0]||null;
+    if(!lastDate)return;
+    var penalty=calcDegradePenalty(lastDate);
+    if(penalty>0&&data.totalXP>0){var newXP=Math.max(0,data.totalXP-penalty);save({...data,totalXP:newXP,level:levelInfo(newXP).level});setDegradeAnim(penalty);}
+  },[]);
 
-// フレンドデータ取得
-useEffect(()=>{
-if(!friends.length)return;
-friends.forEach(async fid=>{
-try{var q=query(collection(db,“users”),where(“gqId”,”==”,fid));var snap=await getDocs(q);if(!snap.empty)setFriendDetails(prev=>({…prev,[fid]:snap.docs[0].data()}));}catch(e){}
-});
-},[friends]);
+  // フレンドデータ取得
+  useEffect(()=>{
+    if(!friends.length)return;
+    friends.forEach(async fid=>{
+      try{
+        var q=query(collection(db,"users"),where("gqId","==",fid));
+        var snap=await getDocs(q);
+        if(!snap.empty)setFriendDetails(prev=>({...prev,[fid]:snap.docs[0].data()}));
+      }catch(e){}
+    });
+  },[friends]);
 
-var isActive=!!(checkIn&&(Date.now()-checkIn.startTime<VALID_MS));
-useEffect(()=>{var e=PRESETS[part][0];setExercise(e);setWeight(data.exercises[e]?.maxWeight||60);},[part]);
-useEffect(()=>{setWeight(data.exercises[exercise]?.maxWeight||60);},[exercise]);
+  var isActive=!!(checkIn&&(Date.now()-checkIn.startTime<VALID_MS));
 
-// ── save：Firestore＋localStorage両方に書く ───────────
-var save=useCallback((d)=>{
-setData(d);
-// localStorageキャッシュ
-try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){}
-// Firestoreに書き込む（ゲームデータ＋メタ情報）
-if(authUser){
-var gname=gorillaName||“ゴリラ”;
-var gqid=makeGQId(authUser.uid);
-setDoc(doc(db,“users”,authUser.uid),{
-uid:authUser.uid,gqId:gqid,gorillaName:gname,
-xp:d.totalXP||0,level:d.level||1,partXP:d.partXP||{},
-maxStreak:d.maxStreak||0,totalSessions:d.totalSessions||0,
-lastTraining:d.sessions?.slice(-1)[0]||“なし”,
-// ゲームデータを全フィールド保存
-totalXP:d.totalXP||0,exercises:d.exercises||{},
-sessions:d.sessions||[],totalProtein:d.totalProtein||0,
-nightRecord:d.nightRecord||false,morningRecord:d.morningRecord||false,noonRecord:d.noonRecord||false,
-prCount:d.prCount||0,totalSets:d.totalSets||0,maxWeight:d.maxWeight||0,
-maxDailySessions:d.maxDailySessions||0,workoutLog:d.workoutLog||[],
-menuRecords:d.menuRecords||0,totalSessions:d.totalSessions||0,maxStreak:d.maxStreak||0
-},{merge:true}).catch(()=>{});
-// バトルスコア同期
-syncBattleScore(authUser.uid,d.totalXP||0);
-}
-},[authUser,gorillaName]);
+  useEffect(()=>{var e=PRESETS[part][0];setExercise(e);setWeight(data.exercises[e]?.maxWeight||60);},[part]);
+  useEffect(()=>{setWeight(data.exercises[exercise]?.maxWeight||60);},[exercise]);
 
-var saveMenus=m=>{setMenus(m);try{localStorage.setItem(MK,JSON.stringify(m));}catch(e){}};
-var saveFriends=f=>{setFriends(f);try{localStorage.setItem(FK,JSON.stringify(f));}catch(e){}};
+  // ── save ──────────────────────────────────────────────
+  var save=useCallback((d)=>{
+    setData(d);
+    try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){}
+    // Firestoreに同期
+    if(authUser){
+      var gname=localStorage.getItem(NK)||"ゴリラ";
+      var gqid=makeGQId(authUser.uid);
+      setDoc(doc(db,"users",authUser.uid),{
+        uid:authUser.uid,gqId:gqid,gorillaName:gname,
+        xp:d.totalXP||0,level:d.level||1,partXP:d.partXP||{},
+        maxStreak:d.maxStreak||0,totalSessions:d.totalSessions||0,
+        lastTraining:d.sessions?.slice(-1)[0]||"なし"
+      },{merge:true}).catch(()=>{});
+      // バトルスコア同期
+      syncBattleScore(authUser.uid,gqid,d.totalXP||0);
+    }
+  },[authUser]);
 
-// ── XP記録 ──────────────────────────────────────────────
-function applyXP(d0,xpList,mult=1){
-var today=getToday(),hour=getHour();
-var d={…d0},ns=[…d.sessions],totalXP=d.totalXP,partXP={…d.partXP},exercises={…d.exercises};
-var totalSets=d.totalSets||0,maxWeight=d.maxWeight||0,prCount=d.prCount||0,allXP=0,logItems=[];
-xpList.forEach(item=>{
-var isNew=!exercises[item.exercise],prevMax=exercises[item.exercise]?.maxWeight||0,isPR=item.weight>prevMax&&!isNew;
-var xp=item.sets*5;if(isNew)xp+=20;if(isPR)xp+=30;
-ns.push(today);var streak=getStreak(ns);
-if(streak>=3&&streak>getStreak(d.sessions))xp+=50;
-xp=Math.round(xp*mult);totalXP+=xp;allXP+=xp;
-partXP[item.part]=(partXP[item.part]||0)+(item.sets*5);
-exercises[item.exercise]={maxWeight:Math.max(item.weight,prevMax),count:(exercises[item.exercise]?.count||0)+1,part:item.part};
-totalSets+=item.sets;maxWeight=Math.max(maxWeight,item.weight);if(isPR)prCount++;
-logItems.push({exercise:item.exercise,part:item.part,weight:item.weight,reps:item.reps,sets:item.sets,xp});
-});
-var tds=ns.filter(x=>x===today).length,streak=getStreak(ns),lv=levelInfo(totalXP).level;
-var wl=[{date:today,time:new Date().toLocaleTimeString(“ja-JP”,{hour:“2-digit”,minute:“2-digit”}),items:logItems,xp:allXP},…(d.workoutLog||[])].slice(0,20);
-d={…d,totalXP,partXP,exercises,sessions:ns,totalSessions:(d.totalSessions||0)+xpList.length,maxStreak:Math.max(d.maxStreak||0,streak),level:lv,prCount,totalSets,maxWeight,maxDailySessions:Math.max(d.maxDailySessions||0,tds),workoutLog:wl,nightRecord:d.nightRecord||(hour>=0&&hour<5),morningRecord:d.morningRecord||(hour>=5&&hour<7),noonRecord:d.noonRecord||(hour>=12&&hour<13)};
-return{d,allXP,prevLevel:levelInfo(d0.totalXP).level,newLevel:lv};
-}
+  var saveMenus=m=>{setMenus(m);try{localStorage.setItem(MK,JSON.stringify(m));}catch(e){}};
+  var saveFriends=f=>{setFriends(f);try{localStorage.setItem(FK,JSON.stringify(f));}catch(e){}};
 
-function recordAndSave(xpList){
-if(!isActive){alert(“トレーニングを開始してください！”);return;}
-var r=applyXP(data,xpList,xpMult);save(r.d);setXpAnim(r.allXP);
-if(r.newLevel>r.prevLevel)setTimeout(()=>setLvAnim(r.newLevel),800);
-}
+  // ── XP計算・記録 ──────────────────────────────────────
+  function applyXP(d0,xpList,mult=1){
+    var today=getToday(),hour=getHour();
+    var d={...d0},ns=[...d.sessions],totalXP=d.totalXP,partXP={...d.partXP},exercises={...d.exercises};
+    var totalSets=d.totalSets||0,maxWeight=d.maxWeight||0,prCount=d.prCount||0,allXP=0,logItems=[];
+    xpList.forEach(item=>{
+      var isNew=!exercises[item.exercise],prevMax=exercises[item.exercise]?.maxWeight||0,isPR=item.weight>prevMax&&!isNew;
+      var xp=item.sets*5;
+      if(isNew)xp+=20;if(isPR)xp+=30;
+      ns.push(today);var streak=getStreak(ns);
+      if(streak>=3&&streak>getStreak(d.sessions))xp+=50;
+      xp=Math.round(xp*mult);totalXP+=xp;allXP+=xp;
+      partXP[item.part]=(partXP[item.part]||0)+(item.sets*5);
+      exercises[item.exercise]={maxWeight:Math.max(item.weight,prevMax),count:(exercises[item.exercise]?.count||0)+1,part:item.part};
+      totalSets+=item.sets;maxWeight=Math.max(maxWeight,item.weight);if(isPR)prCount++;
+      logItems.push({exercise:item.exercise,part:item.part,weight:item.weight,reps:item.reps,sets:item.sets,xp});
+    });
+    var tds=ns.filter(x=>x===today).length,streak=getStreak(ns),lv=levelInfo(totalXP).level;
+    var wl=[{date:today,time:new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"}),items:logItems,xp:allXP},...(d.workoutLog||[])].slice(0,20);
+    d={...d,totalXP,partXP,exercises,sessions:ns,totalSessions:(d.totalSessions||0)+xpList.length,maxStreak:Math.max(d.maxStreak||0,streak),level:lv,prCount,totalSets,maxWeight,maxDailySessions:Math.max(d.maxDailySessions||0,tds),workoutLog:wl,nightRecord:d.nightRecord||(hour>=0&&hour<5),morningRecord:d.morningRecord||(hour>=5&&hour<7),noonRecord:d.noonRecord||(hour>=12&&hour<13)};
+    return{d,allXP,prevLevel:levelInfo(d0.totalXP).level,newLevel:lv};
+  }
 
-function handleProtein1(){
-var xp=10,np={…data.partXP};PARTS.forEach(p=>{np[p]=(np[p]||0)+2;});
-var ntxp=data.totalXP+xp,lv=levelInfo(ntxp).level;
-save({…data,totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+1});setXpAnim(xp);
-}
+  function recordAndSave(xpList){
+    if(!isActive){alert("トレーニングを開始してください！");return;}
+    var r=applyXP(data,xpList,xpMult);save(r.d);setXpAnim(r.allXP);
+    if(r.newLevel>r.prevLevel)setTimeout(()=>setLvAnim(r.newLevel),800);
+  }
 
-function onCheckIn(){
-var doRoulette=Math.random()<0.2;
-var ci={startTime:Date.now()};setCheckIn(ci);
-try{localStorage.setItem(CK,JSON.stringify(ci));}catch(e){}
-save({…data,totalCheckIns:(data.totalCheckIns||0)+1});
-if(doRoulette)setShowBanana(true);else setXpMult(1);
-}
+  function handleProtein1(){
+    var xp=10,np={...data.partXP};PARTS.forEach(p=>{np[p]=(np[p]||0)+2;});
+    var ntxp=data.totalXP+xp,lv=levelInfo(ntxp).level;
+    save({...data,totalXP:ntxp,partXP:np,level:lv,totalProtein:(data.totalProtein||0)+1});setXpAnim(xp);
+  }
 
-// ── 完全リセット（localStorage＋Firestore） ─────────────
-async function handleReset(){
-var now=serverTimestamp();
-// Firestoreのユーザードキュメントを完全初期化
-if(authUser){
-var gqid=makeGQId(authUser.uid);
-await setDoc(doc(db,“users”,authUser.uid),{
-uid:authUser.uid,gqId:gqid,
-gorillaName:“ゴリラ”,
-xp:0,bananas:100,
-resetAt:now, // バトル履歴フィルタ用
-createdAt:now,
-totalXP:0,partXP:{},exercises:{},sessions:[],
-totalSessions:0,maxStreak:0,level:1,totalProtein:0,
-nightRecord:false,morningRecord:false,noonRecord:false,
-prCount:0,totalSets:0,maxWeight:0,maxDailySessions:0,
-workoutLog:[],menuRecords:0,totalCheckIns:0,lastTraining:“なし”
-});
-}
-// localStorageをクリア
-localStorage.removeItem(SK);
-localStorage.removeItem(CK);
-localStorage.removeItem(NK);
-// Stateをリセット
-setData(INIT);
-setGorillaName(“ゴリラ”);
-setCheckIn(null);
-setMenus(DEFAULT_MENUS);
-setResetAt(now);
-setShowReset(false);
-// メニューもデフォルトに戻す
-saveMenus(DEFAULT_MENUS);
-}
+  function onCheckIn(){
+    var doRoulette=Math.random()<0.2;
+    var ci={startTime:Date.now()};setCheckIn(ci);
+    try{localStorage.setItem(CK,JSON.stringify(ci));}catch(e){}
+    save({...data,totalCheckIns:(data.totalCheckIns||0)+1});
+    if(doRoulette)setShowBanana(true);else setXpMult(1);
+  }
 
-// ── バトル申請（即時開始） ────────────────────────────
-async function handleBattleRequest(targetGQId,targetName,targetUid){
-if(!authUser)return;
-var gname=gorillaName||“ゴリラ”;
-var now=new Date(),endAt=new Date(now.getTime()+BATTLE_DURATION_MS);
-try{
-await addDoc(collection(db,“battles”),{
-challengerId:authUser.uid,challengerGQId:gqId,challengerName:gname,
-challengerBaseXP:data.totalXP||0,challengerScore:0,
-opponentId:targetUid,opponentGQId:targetGQId,opponentName:targetName,
-opponentBaseXP:0,opponentScore:0,
-status:“active”,startAt:Timestamp.fromDate(now),endAt:Timestamp.fromDate(endAt),
-winnerId:null,createdAt:serverTimestamp()
-});
-alert(“バトルかいし！5ふんかけて！”);
-}catch(e){alert(“バトル申請に失敗しました”);}
-}
+  function handleReset(){save(INIT);setCheckIn(null);localStorage.removeItem(CK);setShowReset(false);}
 
-async function handleFinalize(battleId,battle){
-if(finalizedRef.current.has(battleId))return;
-finalizedRef.current.add(battleId);
-await finalizeBattle(battleId,battle);
-}
+  // ── バトル申請（即時開始） ────────────────────────────
+  async function handleBattleRequest(targetGQId,targetName,targetUid){
+    if(!authUser)return;
+    var gname=localStorage.getItem(NK)||"ゴリラ";
+    var now=new Date();
+    var endAt=new Date(now.getTime()+BATTLE_DURATION_MS);
+    try{
+      await addDoc(collection(db,"battles"),{
+        challengerId:authUser.uid,challengerGQId:gqId,challengerName:gname,
+        challengerBaseXP:data.totalXP||0,challengerScore:0,
+        opponentId:targetUid,opponentGQId:targetGQId,opponentName:targetName,
+        opponentBaseXP:0,opponentScore:0,
+        status:"active",
+        startAt:Timestamp.fromDate(now),endAt:Timestamp.fromDate(endAt),
+        winnerId:null,createdAt:serverTimestamp()
+      });
+      alert("バトルかいし！5ふんかけて！");
+    }catch(e){alert("バトル申請に失敗しました: "+e.message);}
+  }
 
-async function handleFriendSearch(){
-if(!friendSearch.trim())return;
-setFriendLoading(true);setFriendResult(null);
-try{
-var q=query(collection(db,“users”),where(“gqId”,”==”,friendSearch.trim()));
-var snap=await getDocs(q);
-if(!snap.empty){var fd=snap.docs[0].data();setFriendResult({…fd,docId:snap.docs[0].id});}
-else setFriendResult(“notfound”);
-}catch(e){setFriendResult(“notfound”);}
-setFriendLoading(false);
-}
+  // バトル終了処理（クライアント側で検知）
+  async function handleFinalize(battleId,battle){
+    if(finalizedRef.current.has(battleId))return;
+    finalizedRef.current.add(battleId);
+    await finalizeBattle(battleId,battle);
+  }
 
-function addFriend(fid,fd){if(friends.includes(fid))return;saveFriends([…friends,fid]);setFriendDetails(prev=>({…prev,[fid]:fd}));setFriendResult(null);setFriendSearch(””);}
-function removeFriend(fid){saveFriends(friends.filter(x=>x!==fid));}
-function getActiveBattle(fGQId){return battles.find(b=>b.status===“active”&&((b.challengerGQId===gqId&&b.opponentGQId===fGQId)||(b.opponentGQId===gqId&&b.challengerGQId===fGQId)));}
+  // フレンド検索（gqIdで検索）
+  async function handleFriendSearch(){
+    if(!friendSearch.trim())return;
+    setFriendLoading(true);setFriendResult(null);
+    try{
+      var q=query(collection(db,"users"),where("gqId","==",friendSearch.trim()));
+      var snap=await getDocs(q);
+      if(!snap.empty){var d=snap.docs[0].data();setFriendResult({...d,docId:snap.docs[0].id});}
+      else setFriendResult("notfound");
+    }catch(e){setFriendResult("notfound");}
+    setFriendLoading(false);
+  }
 
-var li=levelInfo(data.totalXP||0);var level=li.level,current=li.current,needed=li.needed;
-var stage=getStage(level);
-var lastDate=data.sessions?.slice(-1)[0]||null;
-var isDegrading=(lastDate?daysDiff(lastDate,getToday()):0)>=3;
-var degradeDays=lastDate?daysDiff(lastDate,getToday()):0;
+  function addFriend(fid,fd){
+    if(friends.includes(fid))return;
+    saveFriends([...friends,fid]);
+    setFriendDetails(prev=>({...prev,[fid]:fd}));
+    setFriendResult(null);setFriendSearch("");
+  }
+  function removeFriend(fid){saveFriends(friends.filter(x=>x!==fid));}
 
-function ts(t){return{flex:1,padding:“9px 0”,border:“none”,cursor:“pointer”,fontSize:12,fontFamily:”‘DotGothic16’,monospace”,background:tab===t?“rgba(92,184,122,0.18)”:“rgba(255,255,255,0.05)”,color:tab===t?”#5cb87a”:”#aaa”,boxShadow:tab===t?“inset 0 2px 4px rgba(0,0,0,0.3)”:“inset 0 1px 3px rgba(0,0,0,0.2)”,transition:“all 0.15s”};}
+  // 同じペアのアクティブバトルを検索
+  function getActiveBattle(friendGQId){
+    return battles.find(b=>b.status==="active"&&((b.challengerGQId===gqId&&b.opponentGQId===friendGQId)||(b.opponentGQId===gqId&&b.challengerGQId===friendGQId)));
+  }
 
-if(authLoading||(!authUser?false:!dataReady)){
-return h(“div”,{style:{display:“flex”,flexDirection:“column”,alignItems:“center”,justifyContent:“center”,height:“100vh”,color:”#ffdd00”,fontSize:14,fontFamily:”‘DotGothic16’,monospace”,gap:12}},
-h(“div”,{style:{fontSize:32}},“🦍”),
-h(“div”,null,“データをよみこみ中…”)
-);
-}
-if(!authUser)return h(LoginScreen,null);
+  var li=levelInfo(data.totalXP||0);var level=li.level,current=li.current,needed=li.needed;
+  var stage=getStage(level);
+  var lastDate=data.sessions?.slice(-1)[0]||null;
+  var degradeDays=lastDate?daysDiff(lastDate,getToday()):0;
+  var isDegrading=degradeDays>=3;
 
-return h(“div”,{style:{maxWidth:430,margin:“0 auto”,padding:“10px 12px”,background:”#0a0a1a”,minHeight:“100vh”}},
-showBanana?h(BananaSwipe,{onSlide:()=>{setShowBanana(false);setShowRoulette(true);}}):null,
-showRoulette?h(RouletteOverlay,{onResult:r=>{setXpMult(r.mult);setShowRoulette(false);}}):null,
-editMenu!==null?h(MenuEditor,{menu:menus[editMenu],onSave:m=>{var nm=menus.map((x,i)=>i===editMenu?m:x);saveMenus(nm);setEditMenu(null);},onClose:()=>setEditMenu(null)}):null,
-showNameEditor?h(NameEditor,{current:gorillaName,onSave:n=>{setGorillaName(n);localStorage.setItem(NK,n);if(authUser)updateDoc(doc(db,“users”,authUser.uid),{gorillaName:n}).catch(()=>{});setShowNameEditor(false);},onClose:()=>setShowNameEditor(false)}):null,
-xpAnim?h(XPPop,{xp:xpAnim,onDone:()=>setXpAnim(null)}):null,
-lvAnim?h(LevelUpOverlay,{level:lvAnim,onDone:()=>setLvAnim(null)}):null,
-degradeAnim?h(DegradePop,{xp:degradeAnim,onDone:()=>setDegradeAnim(null)}):null,
+  function ts(t){return{flex:1,padding:"9px 0",border:"none",cursor:"pointer",fontSize:12,fontFamily:"'DotGothic16',monospace",background:tab===t?"rgba(92,184,122,0.18)":"rgba(255,255,255,0.05)",color:tab===t?"#5cb87a":"#aaa",boxShadow:tab===t?"inset 0 2px 4px rgba(0,0,0,0.3)":"inset 0 1px 3px rgba(0,0,0,0.2)",transition:"all 0.15s"};}
 
-```
-// タイトル
-h("div",{style:{textAlign:"center",marginBottom:8}},
-  h("div",{style:{fontSize:20,color:"#ffdd00",letterSpacing:2}},"★ GORILLA QUEST ★"),
-  h("div",{style:{fontSize:11,color:"#aaa"}},STAGE_LABELS[stage]),
-  h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4}},
-    h("div",{style:{fontSize:10,color:"#4488ff"}},"ID: "+gqId),
-    h("button",{onClick:()=>navigator.clipboard?.writeText(gqId).then(()=>alert("コピーしました！")),style:{background:"none",border:"1px solid #4444aa",color:"#4488ff",fontSize:9,padding:"2px 6px",cursor:"pointer",fontFamily:"'DotGothic16',monospace"}},"コピー"),
-    h("button",{onClick:()=>signOut(auth),style:{background:"none",border:"1px solid #555",color:"#aaa",fontSize:9,padding:"2px 6px",cursor:"pointer",fontFamily:"'DotGothic16',monospace"}},"ログアウト")
-  )
-),
+  if(authLoading)return h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",color:"#ffdd00",fontSize:14,fontFamily:"'DotGothic16',monospace"}},"ロード中...");
+  if(!authUser)return h(LoginScreen,null);
 
-// アバター
-h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-  h("div",{style:{display:"flex",gap:12,alignItems:"flex-start"}},
-    h("div",{style:{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center"}},
-      h("div",{style:{width:90,height:90,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}},
-        h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],style:{width:180,height:180,objectFit:"contain",imageRendering:"pixelated"},onError:e=>{e.target.style.display="none";}})
-      ),
-      h("div",{style:{marginTop:4,fontSize:13,color:"#ffaa44",textAlign:"center"}},"🍌 "+(userDoc?.bananas??100)),
-      h("a",{href:"https://www.mtgec.jp/shop/pages/refa_bubble_u.aspx",target:"_blank",style:{display:"block",marginTop:2,background:"#fff",color:"#000033",fontSize:8,padding:"2px 5px",borderRadius:4,border:"2px solid #ffdd00",textDecoration:"none",lineHeight:1.3,textAlign:"center",maxWidth:90,position:"relative"}},
-        "汗の放置は甘えだ",h("span",{style:{fontSize:7,color:"#888"}},"[PR]"),
-        h("div",{style:{position:"absolute",top:-5,left:"50%",transform:"translateX(-50%)",width:0,height:0,borderLeft:"4px solid transparent",borderRight:"4px solid transparent",borderBottom:"5px solid #ffdd00"}})
+  return h("div",{style:{maxWidth:430,margin:"0 auto",padding:"10px 12px",background:"#0a0a1a",minHeight:"100vh"}},
+    showBanana?h(BananaSwipe,{onSlide:()=>{setShowBanana(false);setShowRoulette(true);}}):null,
+    showRoulette?h(RouletteOverlay,{onResult:r=>{setXpMult(r.mult);setShowRoulette(false);}}):null,
+    editMenu!==null?h(MenuEditor,{menu:menus[editMenu],onSave:m=>{setMenus(menus.map((x,i)=>i===editMenu?m:x));saveMenus(menus.map((x,i)=>i===editMenu?m:x));setEditMenu(null);},onClose:()=>setEditMenu(null)}):null,
+    showNameEditor?h(NameEditor,{current:gorillaName,onSave:n=>{setGorillaName(n);localStorage.setItem(NK,n);if(authUser)updateDoc(doc(db,"users",authUser.uid),{gorillaName:n}).catch(()=>{});setShowNameEditor(false);},onClose:()=>setShowNameEditor(false)}):null,
+    xpAnim?h(XPPop,{xp:xpAnim,onDone:()=>setXpAnim(null)}):null,
+    lvAnim?h(LevelUpOverlay,{level:lvAnim,onDone:()=>setLvAnim(null)}):null,
+    degradeAnim?h(DegradePop,{xp:degradeAnim,onDone:()=>setDegradeAnim(null)}):null,
+
+    // タイトル
+    h("div",{style:{textAlign:"center",marginBottom:8}},
+      h("div",{style:{fontSize:20,color:"#ffdd00",letterSpacing:2}},"★ GORILLA QUEST ★"),
+      h("div",{style:{fontSize:11,color:"#aaa"}},STAGE_LABELS[stage]),
+      h("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4}},
+        h("div",{style:{fontSize:10,color:"#4488ff"}},"ID: "+gqId),
+        h("button",{onClick:()=>navigator.clipboard?.writeText(gqId).then(()=>alert("コピーしました！")),style:{background:"none",border:"1px solid #4444aa",color:"#4488ff",fontSize:9,padding:"2px 6px",cursor:"pointer",fontFamily:"'DotGothic16',monospace"}},"コピー"),
+        h("button",{onClick:()=>signOut(auth),style:{background:"none",border:"1px solid #555",color:"#aaa",fontSize:9,padding:"2px 6px",cursor:"pointer",fontFamily:"'DotGothic16',monospace"}},"ログアウト")
       )
     ),
-    h("div",{style:{flex:1,minWidth:0}},
-      h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}},
-        h("div",{style:{display:"flex",alignItems:"center",gap:4}},
-          h("div",{style:{fontSize:13,color:"#ffdd00"}},gorillaName+" LV"+level),
-          h("button",{onClick:()=>setShowNameEditor(true),style:{background:"none",border:"none",cursor:"pointer",fontSize:12,padding:"0 2px",color:"#aaa"}},"✏️")
+
+    // アバター
+    h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+      h("div",{style:{display:"flex",gap:12,alignItems:"flex-start"}},
+        h("div",{style:{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center"}},
+          h("div",{style:{width:90,height:90,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}},
+            h("img",{src:GORILLA_IMGS[stage],alt:STAGE_LABELS[stage],style:{width:180,height:180,objectFit:"contain",imageRendering:"pixelated"},onError:e=>{e.target.style.display="none";}})
+          ),
+          // バナナ表示
+          h("div",{style:{marginTop:4,fontSize:12,color:"#ffaa44",textAlign:"center"}},"🍌 "+(userDoc?.bananas??100)),
+          // 吹き出し広告
+          h("a",{href:"https://www.mtgec.jp/shop/pages/refa_bubble_u.aspx",target:"_blank",style:{display:"block",marginTop:2,background:"#fff",color:"#000033",fontSize:8,padding:"2px 5px",borderRadius:4,border:"2px solid #ffdd00",textDecoration:"none",lineHeight:1.3,textAlign:"center",maxWidth:90,position:"relative"}},
+            "汗の放置は甘えだ",h("span",{style:{fontSize:7,color:"#888"}},"[PR]"),
+            h("div",{style:{position:"absolute",top:-5,left:"50%",transform:"translateX(-50%)",width:0,height:0,borderLeft:"4px solid transparent",borderRight:"4px solid transparent",borderBottom:"5px solid #ffdd00"}})
+          )
         ),
-        h("button",{onClick:handleProtein1,style:{background:"none",border:"none",cursor:"pointer",fontSize:20,padding:"0 2px"}},"🥤")
-      ),
-      h(DQBar,{value:current,max:needed,color:"#44ff44"}),
-      h("div",{style:{fontSize:10,color:"#aaa",marginTop:1,marginBottom:4}},current+"/"+needed+" XP"),
-      isDegrading?h("div",{style:{fontSize:10,color:"#ff4444",marginBottom:4,animation:"pulse 1s infinite"}},"⚠ "+degradeDays+"日さぼり中！"):null,
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 4px"}},
-        PARTS.map(p=>{var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:2,minWidth:0}},h("span",{style:{fontSize:9,color:PART_COLOR[p],width:18,flexShrink:0}},p),h("div",{style:{flex:1,height:10,background:"#001100",border:"1px solid #336633",minWidth:0,overflow:"hidden"}},h("div",{style:{height:"100%",width:Math.min(Math.round((pi.current/pi.needed)*100),100)+"%",background:PART_COLOR[p],transition:"width 0.4s"}})),h("span",{style:{fontSize:9,color:"#aaa",width:18,flexShrink:0,textAlign:"right"}},"L"+pi.level));})
-      )
-    )
-  )
-),
-
-// チェックイン
-isActive?
-  h("div",{className:"dq-win",style:{padding:"8px 12px",marginBottom:8,border:"3px solid #44ff44",display:"flex",alignItems:"center",gap:8}},
-    h("div",{style:{flex:1}},
-      h("div",{style:{fontSize:11,color:"#44ff44",animation:"pulse 1s infinite"}},"★ トレーニング中！"),
-      xpMult>1?h("div",{style:{fontSize:11,color:"#ffdd00"}},"けいけんち "+xpMult+"倍ボーナス中！"):null,
-      h("div",{style:{fontSize:11,color:"#aaa",marginTop:2}},"のこり "+fmtTime(remaining||0))
-    )
-  ):
-  h("button",{className:"dq-btn",onClick:onCheckIn,style:{width:"100%",textAlign:"center",fontSize:14,padding:"13px",border:"3px solid #44ff44",color:"#44ff44",marginBottom:8}},"▶ トレーニングかいし！"),
-
-// タブ
-h("div",{style:{display:"flex",gap:2,marginBottom:8,background:"rgba(0,0,0,0.3)"}},
-  [["log","▶ きろく"],["history","▶ れきし"],["friends","▶ ともだち"]].map(t=>h("button",{key:t[0],style:ts(t[0]),onClick:()=>setTab(t[0])},t[1]))
-),
-
-// ── LOG ──────────────────────────────────────────────
-tab==="log"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-  !isActive?h("div",{style:{padding:"10px",textAlign:"center",color:"#ff4444",fontSize:11,background:"#110000",border:"2px solid #ff4444"}},"トレーニングを開始してから記録できます"):null,
-  h("div",{style:{display:"flex",gap:4}},
-    h("button",{className:"dq-btn "+(logMode==="menu"?"active":""),onClick:()=>setLogMode("menu"),style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ メニューきろく"),
-    h("button",{className:"dq-btn "+(logMode==="single"?"active":""),onClick:()=>setLogMode("single"),style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ たんどくきろく")
-  ),
-  logMode==="single"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-    h("div",{className:"dq-win",style:{padding:"10px 12px"}},
-      h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ぶいをえらぶ"),
-      h("div",{style:{display:"flex",gap:3,marginBottom:12}},PARTS.map(p=>h("button",{key:p,className:"dq-btn "+(part===p?"active":""),onClick:()=>setPart(p),style:{flex:1,fontSize:11,padding:"5px 2px",textAlign:"center",color:part===p?PART_COLOR[p]:"#aaa",borderBottom:part===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p))),
-      h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ しゅもくをえらぶ"),
-      h("select",{className:"dq-input",value:exercise,onChange:e=>setExercise(e.target.value),style:{width:"100%",fontSize:13,marginBottom:12}},PRESETS[part].map(e=>h("option",{key:e,value:e},e))),
-      h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
-        [["じゅうりょう","kg",weight,setWeight,5,0],["かいすう","かい",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(f=>h("div",{key:f[0]},h("div",{style:{fontSize:10,color:"#aaa",marginBottom:4,textAlign:"center"}},f[0]),h(Stepper,{value:f[2],onChange:f[3],step:f[4],min:f[5]}),h("div",{style:{textAlign:"center",fontSize:11,marginTop:2,color:"#aaa"}},f[2]+f[1])))
-      )
-    ),
-    h("button",{className:"dq-btn",onClick:()=>recordAndSave([{exercise,part,weight,reps,sets}]),style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ きろくする")
-  ):null,
-  logMode==="menu"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
-    h("div",{style:{display:"flex",gap:3}},menus.map((m,i)=>h("button",{key:i,className:"dq-btn "+(selMenu===i?"active":""),onClick:()=>setSelMenu(i),style:{flex:1,textAlign:"center",fontSize:11,padding:"7px 2px"}},m.name))),
-    h("div",{className:"dq-win",style:{padding:"10px 12px"}},
-      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},h("div",{style:{fontSize:12,color:"#ffdd00"}},menus[selMenu].name),h("button",{className:"dq-btn",onClick:()=>setEditMenu(selMenu),style:{fontSize:11,padding:"4px 8px",color:"#aaa",border:"1px solid #4444aa"}},"へんしゅう")),
-      menus[selMenu].items.map((item,i)=>h("div",{key:i,style:{display:"flex",justifyContent:"space-between",fontSize:12,borderBottom:i<menus[selMenu].items.length-1?"1px solid #111144":"none",padding:"5px 0"}},h("div",null,h("span",{style:{color:PART_COLOR[getPartForEx(item.exercise)]||"#aaa"}},getPartForEx(item.exercise)),h("span",{style:{color:"#fff",marginLeft:6}},item.exercise)),h("span",{style:{color:"#aaa",fontSize:11}},item.weight+"kg "+item.reps+"回 "+item.sets+"set")))
-    ),
-    h("button",{className:"dq-btn",onClick:()=>recordAndSave(menus[selMenu].items.map(item=>({exercise:item.exercise,part:getPartForEx(item.exercise),weight:item.weight,reps:item.reps,sets:item.sets}))),style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ メニューをきろくする（"+menus[selMenu].items.length+"しゅもく）")
-  ):null
-):null,
-
-// ── HISTORY ──────────────────────────────────────────
-tab==="history"?h("div",null,
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
-      [["そうセッション",data.totalSessions||0,"かい"],["さいちょうれんぞく",data.maxStreak||0,"にち"],["しゅもくすう",Object.keys(data.exercises||{}).length,"しゅ"],["プロテイン",data.totalProtein||0,"ぱい"],["さいだいじゅうりょう",data.maxWeight||0,"kg"],["バナナ",userDoc?.bananas??100,"🍌"]].map(it=>h("div",{key:it[0],style:{borderBottom:"1px solid #111144",paddingBottom:6}},h("div",{style:{fontSize:10,color:"#aaa"}},it[0]),h("div",{style:{fontSize:18,color:"#ffdd00"}},it[1],h("span",{style:{fontSize:11,color:"#aaa"}},it[2]))))
-    )
-  ),
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ ぶいべつレベル"),
-    PARTS.map(p=>{var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{marginBottom:8}},h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}},h("span",{style:{color:PART_COLOR[p]}},p+" Lv."+pi.level),h("span",{style:{color:"#aaa"}},pi.current+"/"+pi.needed)),h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p]}));})
-  ),
-  Object.keys(data.exercises||{}).length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ しゅもくベスト"),
-    Object.entries(data.exercises||{}).map(([name,e])=>h("div",{key:name,style:{display:"flex",justifyContent:"space-between",fontSize:12,borderBottom:"1px solid #111144",padding:"4px 0"}},h("div",null,h("span",{style:{color:"#fff"}},name),h("span",{style:{fontSize:10,marginLeft:6,color:PART_COLOR[e.part]||"#aaa"}},e.part)),h("span",{style:{color:"#aaa"}},e.maxWeight+"kg × "+e.count+"回")))
-  ):null,
-  h("div",{style:{marginTop:8,marginBottom:8}},
-    !showReset
-      ?h("button",{className:"dq-btn",onClick:()=>setShowReset(true),style:{width:"100%",textAlign:"center",fontSize:12,padding:"10px",border:"2px solid #ff4444",color:"#ff4444"}},"▶ データをぜんぶけす")
-      :h("div",{className:"dq-win",style:{padding:"10px 12px",border:"3px solid #ff4444"}},
-          h("div",{style:{fontSize:13,color:"#ff4444",marginBottom:4,textAlign:"center"}},"ほんとうにぜんぶけしますか？"),
-          h("div",{style:{fontSize:10,color:"#aaa",marginBottom:10,textAlign:"center"}},"バナナ・バトル履歴・トレーニング記録がすべて消えます"),
-          h("div",{style:{display:"flex",gap:8}},
-            h("button",{className:"dq-btn",onClick:handleReset,style:{flex:1,textAlign:"center",color:"#ff4444",border:"2px solid #ff4444",fontSize:13,padding:"10px"}},"▶ はい"),
-            h("button",{className:"dq-btn",onClick:()=>setShowReset(false),style:{flex:1,textAlign:"center",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13,padding:"10px"}},"▶ いいえ")
+        h("div",{style:{flex:1,minWidth:0}},
+          h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}},
+            h("div",{style:{display:"flex",alignItems:"center",gap:4}},
+              h("div",{style:{fontSize:13,color:"#ffdd00"}},gorillaName+" LV"+level),
+              h("button",{onClick:()=>setShowNameEditor(true),style:{background:"none",border:"none",cursor:"pointer",fontSize:12,padding:"0 2px",color:"#aaa"}},"✏️")
+            ),
+            h("button",{onClick:handleProtein1,style:{background:"none",border:"none",cursor:"pointer",fontSize:20,padding:"0 2px"}},"🥤")
+          ),
+          h(DQBar,{value:current,max:needed,color:"#44ff44"}),
+          h("div",{style:{fontSize:10,color:"#aaa",marginTop:1,marginBottom:4}},current+"/"+needed+" XP"),
+          isDegrading?h("div",{style:{fontSize:10,color:"#ff4444",marginBottom:4,animation:"pulse 1s infinite"}},"⚠ "+degradeDays+"日さぼり中！"):null,
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px 4px"}},
+            PARTS.map(p=>{var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{display:"flex",alignItems:"center",gap:2,minWidth:0}},h("span",{style:{fontSize:9,color:PART_COLOR[p],width:18,flexShrink:0}},p),h("div",{style:{flex:1,height:10,background:"#001100",border:"1px solid #336633",minWidth:0,overflow:"hidden"}},h("div",{style:{height:"100%",width:Math.min(Math.round((pi.current/pi.needed)*100),100)+"%",background:PART_COLOR[p],transition:"width 0.4s"}})),h("span",{style:{fontSize:9,color:"#aaa",width:18,flexShrink:0,textAlign:"right"}},"L"+pi.level));})
           )
         )
-  ),
-  data.workoutLog?.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ トレーニングりれき"),
-    data.workoutLog.map((log,i)=>h("div",{key:i,style:{borderBottom:i<data.workoutLog.length-1?"1px solid #111144":"none",paddingBottom:8,marginBottom:8}},h("div",{style:{fontSize:11,color:"#ffdd00"}},log.date+" "+log.time),(log.items||[]).map((it,j)=>h("div",{key:j,style:{fontSize:11,color:"#ccc",marginTop:2}},h("span",{style:{color:PART_COLOR[it.part]||"#aaa"}},it.part)," "+it.exercise+" "+it.weight+"kg×"+it.reps+"×"+it.sets+"set")),h("div",{style:{fontSize:11,color:"#44ff44",marginTop:2}},"+"+log.xp+"XP")))
-  ):null
-):null,
+      )
+    ),
 
-// ── FRIENDS + BATTLE ─────────────────────────────────
-tab==="friends"?h("div",null,
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ じぶんのID"),
-    h("div",{style:{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}},
-      h("div",{style:{fontSize:14,color:"#4488ff",letterSpacing:2}},gqId),
-      h("button",{className:"dq-btn",onClick:()=>navigator.clipboard?.writeText(gqId).then(()=>alert("コピーしました！")),style:{fontSize:11,padding:"4px 10px",color:"#ffdd00",border:"1px solid #ffdd00"}},"コピー")
+    // チェックイン
+    isActive?
+      h("div",{className:"dq-win",style:{padding:"8px 12px",marginBottom:8,border:"3px solid #44ff44",display:"flex",alignItems:"center",gap:8}},
+        h("div",{style:{flex:1}},
+          h("div",{style:{fontSize:11,color:"#44ff44",animation:"pulse 1s infinite"}},"★ トレーニング中！"),
+          xpMult>1?h("div",{style:{fontSize:11,color:"#ffdd00"}},"けいけんち "+xpMult+"倍ボーナス中！"):null,
+          h("div",{style:{fontSize:11,color:"#aaa",marginTop:2}},"のこり "+fmtTime(remaining||0))
+        )
+      ):
+      h("button",{className:"dq-btn",onClick:onCheckIn,style:{width:"100%",textAlign:"center",fontSize:14,padding:"13px",border:"3px solid #44ff44",color:"#44ff44",marginBottom:8}},"▶ トレーニングかいし！"),
+
+    // タブ
+    h("div",{style:{display:"flex",gap:2,marginBottom:8,background:"rgba(0,0,0,0.3)"}},
+      [["log","▶ きろく"],["history","▶ れきし"],["friends","▶ ともだち"]].map(item=>h("button",{key:item[0],style:ts(item[0]),onClick:()=>setTab(item[0])},item[1]))
     ),
-    h("div",{style:{fontSize:10,color:"#666688",textAlign:"center",marginTop:4}},"このIDをともだちにおしえよう")
-  ),
-  battles.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#ff6666",marginBottom:8}},"▼ ⚔ バトル"),
-    battles.map(b=>h(BattleCard,{key:b.id,battle:b,currentUid:authUser?.uid,onFinalize:handleFinalize}))
-  ):null,
-  h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ともだちをけんさく"),
-    h("div",{style:{display:"flex",gap:6,marginBottom:8}},
-      h("input",{className:"dq-input",value:friendSearch,onChange:e=>setFriendSearch(e.target.value),onCompositionEnd:e=>setFriendSearch(e.target.value),placeholder:"GQ-XXXXXX",style:{flex:1,fontSize:13}}),
-      h("button",{className:"dq-btn",onClick:handleFriendSearch,style:{padding:"6px 12px",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:12}},friendLoading?"…":"けんさく")
-    ),
-    friendResult&&friendResult!=="notfound"?h("div",{className:"dq-win",style:{padding:"10px",borderColor:"#4488ff"}},
-      h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
-        h("div",null,h("div",{style:{fontSize:13,color:"#ffdd00"}},friendResult.gorillaName||"ゴリラ"),h("div",{style:{fontSize:11,color:"#aaa"}},"LV"+(friendResult.level||1))),
-        h("button",{className:"dq-btn",onClick:()=>addFriend(friendResult.gqId,friendResult),style:{fontSize:12,padding:"6px 10px",color:"#44ff44",border:"2px solid #44ff44"}},"＋ついか")
+
+    // ── LOG ──────────────────────────────────────────────
+    tab==="log"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+      !isActive?h("div",{style:{padding:"10px",textAlign:"center",color:"#ff4444",fontSize:11,background:"#110000",border:"2px solid #ff4444"}},"トレーニングを開始してから記録できます"):null,
+      h("div",{style:{display:"flex",gap:4}},
+        h("button",{className:"dq-btn "+(logMode==="menu"?"active":""),onClick:()=>setLogMode("menu"),style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ メニューきろく"),
+        h("button",{className:"dq-btn "+(logMode==="single"?"active":""),onClick:()=>setLogMode("single"),style:{flex:1,textAlign:"center",fontSize:12,padding:"8px"}},"▶ たんどくきろく")
       ),
-      h("div",{style:{display:"flex",justifyContent:"center"}},h(PentagonChart,{partXP:friendResult.partXP||{},size:150}))
+      logMode==="single"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+        h("div",{className:"dq-win",style:{padding:"10px 12px"}},
+          h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ぶいをえらぶ"),
+          h("div",{style:{display:"flex",gap:3,marginBottom:12}},PARTS.map(p=>h("button",{key:p,className:"dq-btn "+(part===p?"active":""),onClick:()=>setPart(p),style:{flex:1,fontSize:11,padding:"5px 2px",textAlign:"center",color:part===p?PART_COLOR[p]:"#aaa",borderBottom:part===p?"2px solid "+PART_COLOR[p]:"2px solid transparent"}},p))),
+          h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ しゅもくをえらぶ"),
+          h("select",{className:"dq-input",value:exercise,onChange:e=>setExercise(e.target.value),style:{width:"100%",fontSize:13,marginBottom:12}},PRESETS[part].map(e=>h("option",{key:e,value:e},e))),
+          h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}},
+            [["じゅうりょう","kg",weight,setWeight,5,0],["かいすう","かい",reps,setReps,1,1],["セット","set",sets,setSets,1,1]].map(f=>h("div",{key:f[0]},h("div",{style:{fontSize:10,color:"#aaa",marginBottom:4,textAlign:"center"}},f[0]),h(Stepper,{value:f[2],onChange:f[3],step:f[4],min:f[5]}),h("div",{style:{textAlign:"center",fontSize:11,marginTop:2,color:"#aaa"}},f[2]+f[1])))
+          )
+        ),
+        h("button",{className:"dq-btn",onClick:()=>recordAndSave([{exercise,part,weight,reps,sets}]),style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ きろくする")
+      ):null,
+      logMode==="menu"?h("div",{style:{display:"flex",flexDirection:"column",gap:6}},
+        h("div",{style:{display:"flex",gap:3}},menus.map((m,i)=>h("button",{key:i,className:"dq-btn "+(selMenu===i?"active":""),onClick:()=>setSelMenu(i),style:{flex:1,textAlign:"center",fontSize:11,padding:"7px 2px"}},m.name))),
+        h("div",{className:"dq-win",style:{padding:"10px 12px"}},
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},h("div",{style:{fontSize:12,color:"#ffdd00"}},menus[selMenu].name),h("button",{className:"dq-btn",onClick:()=>setEditMenu(selMenu),style:{fontSize:11,padding:"4px 8px",color:"#aaa",border:"1px solid #4444aa"}},"へんしゅう")),
+          menus[selMenu].items.map((item,i)=>h("div",{key:i,style:{display:"flex",justifyContent:"space-between",fontSize:12,borderBottom:i<menus[selMenu].items.length-1?"1px solid #111144":"none",padding:"5px 0"}},h("div",null,h("span",{style:{color:PART_COLOR[getPartForEx(item.exercise)]||"#aaa"}},getPartForEx(item.exercise)),h("span",{style:{color:"#fff",marginLeft:6}},item.exercise)),h("span",{style:{color:"#aaa",fontSize:11}},item.weight+"kg "+item.reps+"回 "+item.sets+"set")))
+        ),
+        h("button",{className:"dq-btn",onClick:()=>recordAndSave(menus[selMenu].items.map(item=>({exercise:item.exercise,part:getPartForEx(item.exercise),weight:item.weight,reps:item.reps,sets:item.sets}))),style:{width:"100%",textAlign:"center",fontSize:15,padding:"12px",border:"3px solid "+(isActive?"#ffdd00":"#555"),color:isActive?"#ffdd00":"#555"}},"▶▶ メニューをきろくする（"+menus[selMenu].items.length+"しゅもく）")
+      ):null
     ):null,
-    friendResult==="notfound"?h("div",{style:{fontSize:12,color:"#ff4444"}},"みつかりませんでした"):null
-  ),
-  friends.length>0?h("div",null,
-    h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ともだちリスト ("+friends.length+"人)"),
-    friends.map(fid=>{
-      var fd=friendDetails[fid];
-      if(!fd)return h("div",{key:fid,className:"dq-win",style:{padding:"10px",marginBottom:8,color:"#aaa",fontSize:12}},"ID: "+fid+" (よみこみ中...)");
-      var ab=getActiveBattle(fid);
-      return h(FriendCard,{key:fid,fd,fid,onRemove:()=>removeFriend(fid),battleStatus:ab?"active":null,onBattle:()=>handleBattleRequest(fid,fd.gorillaName||"ゴリラ",fd.uid)});
-    })
-  ):h("div",{style:{textAlign:"center",color:"#aaa",fontSize:12,padding:20}},"まだともだちがいません")
-):null,
 
-h("div",{style:{height:24}})
-```
+    // ── HISTORY ──────────────────────────────────────────
+    tab==="history"?h("div",null,
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}},
+          [["そうセッション",data.totalSessions||0,"かい"],["さいちょうれんぞく",data.maxStreak||0,"にち"],["しゅもくすう",Object.keys(data.exercises||{}).length,"しゅ"],["プロテイン",data.totalProtein||0,"ぱい"],["さいだいじゅうりょう",data.maxWeight||0,"kg"],["バナナ",userDoc?.bananas??100,"🍌"]].map(it=>h("div",{key:it[0],style:{borderBottom:"1px solid #111144",paddingBottom:6}},h("div",{style:{fontSize:10,color:"#aaa"}},it[0]),h("div",{style:{fontSize:18,color:"#ffdd00"}},it[1],h("span",{style:{fontSize:11,color:"#aaa"}},it[2]))))
+        )
+      ),
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ ぶいべつレベル"),
+        PARTS.map(p=>{var pi=partLevelInfo((data.partXP||{})[p]||0);return h("div",{key:p,style:{marginBottom:8}},h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:2}},h("span",{style:{color:PART_COLOR[p]}},p+" Lv."+pi.level),h("span",{style:{color:"#aaa"}},pi.current+"/"+pi.needed)),h(DQBar,{value:pi.current,max:pi.needed,color:PART_COLOR[p]}));})
+      ),
+      Object.keys(data.exercises||{}).length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ しゅもくベスト"),
+        Object.entries(data.exercises||{}).map(([name,e])=>h("div",{key:name,style:{display:"flex",justifyContent:"space-between",fontSize:12,borderBottom:"1px solid #111144",padding:"4px 0"}},h("div",null,h("span",{style:{color:"#fff"}},name),h("span",{style:{fontSize:10,marginLeft:6,color:PART_COLOR[e.part]||"#aaa"}},e.part)),h("span",{style:{color:"#aaa"}},e.maxWeight+"kg × "+e.count+"回")))
+      ):null,
+      h("div",{style:{marginTop:8,marginBottom:8}},
+        !showReset?h("button",{className:"dq-btn",onClick:()=>setShowReset(true),style:{width:"100%",textAlign:"center",fontSize:12,padding:"10px",border:"2px solid #ff4444",color:"#ff4444"}},"▶ データをぜんぶけす"):
+        h("div",{className:"dq-win",style:{padding:"10px 12px",border:"3px solid #ff4444"}},h("div",{style:{fontSize:13,color:"#ff4444",marginBottom:10,textAlign:"center"}},"ほんとうにぜんぶけしますか？"),h("div",{style:{display:"flex",gap:8}},h("button",{className:"dq-btn",onClick:handleReset,style:{flex:1,textAlign:"center",color:"#ff4444",border:"2px solid #ff4444",fontSize:13,padding:"10px"}},"▶ はい"),h("button",{className:"dq-btn",onClick:()=>setShowReset(false),style:{flex:1,textAlign:"center",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:13,padding:"10px"}},"▶ いいえ")))
+      ),
+      data.workoutLog?.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:8}},"▼ トレーニングりれき"),
+        data.workoutLog.map((log,i)=>h("div",{key:i,style:{borderBottom:i<data.workoutLog.length-1?"1px solid #111144":"none",paddingBottom:8,marginBottom:8}},h("div",{style:{fontSize:11,color:"#ffdd00"}},log.date+" "+log.time),(log.items||[]).map((it,j)=>h("div",{key:j,style:{fontSize:11,color:"#ccc",marginTop:2}},h("span",{style:{color:PART_COLOR[it.part]||"#aaa"}},it.part)," "+it.exercise+" "+it.weight+"kg×"+it.reps+"×"+it.sets+"set")),h("div",{style:{fontSize:11,color:"#44ff44",marginTop:2}},"+"+log.xp+"XP")))
+      ):null
+    ):null,
 
-);
+    // ── FRIENDS + BATTLE ─────────────────────────────────
+    tab==="friends"?h("div",null,
+      // 自分のID
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:4}},"▼ じぶんのID"),
+        h("div",{style:{display:"flex",alignItems:"center",gap:8,justifyContent:"center"}},
+          h("div",{style:{fontSize:14,color:"#4488ff",letterSpacing:2}},gqId),
+          h("button",{className:"dq-btn",onClick:()=>navigator.clipboard?.writeText(gqId).then(()=>alert("コピーしました！")),style:{fontSize:11,padding:"4px 10px",color:"#ffdd00",border:"1px solid #ffdd00"}},"コピー")
+        ),
+        h("div",{style:{fontSize:10,color:"#666688",textAlign:"center",marginTop:4}},"このIDをともだちにおしえよう")
+      ),
+      // バトル一覧
+      battles.length>0?h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#ff6666",marginBottom:8}},"▼ ⚔ バトル"),
+        battles.map(b=>h(BattleCard,{key:b.id,battle:b,currentUid:authUser?.uid,onFinalize:handleFinalize}))
+      ):null,
+      // フレンド検索
+      h("div",{className:"dq-win",style:{padding:"10px 12px",marginBottom:8}},
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ともだちをけんさく"),
+        h("div",{style:{display:"flex",gap:6,marginBottom:8}},
+          h("input",{className:"dq-input",value:friendSearch,onChange:e=>setFriendSearch(e.target.value),onCompositionEnd:e=>setFriendSearch(e.target.value),placeholder:"GQ-XXXXXX",style:{flex:1,fontSize:13}}),
+          h("button",{className:"dq-btn",onClick:handleFriendSearch,style:{padding:"6px 12px",color:"#ffdd00",border:"2px solid #ffdd00",fontSize:12}},friendLoading?"…":"けんさく")
+        ),
+        friendResult&&friendResult!=="notfound"?h("div",{className:"dq-win",style:{padding:"10px",borderColor:"#4488ff"}},
+          h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+            h("div",null,h("div",{style:{fontSize:13,color:"#ffdd00"}},friendResult.gorillaName||"ゴリラ"),h("div",{style:{fontSize:11,color:"#aaa"}},"LV"+(friendResult.level||1))),
+            // 検索結果には「＋ついか」のみ
+            h("button",{className:"dq-btn",onClick:()=>addFriend(friendResult.gqId,friendResult),style:{fontSize:12,padding:"6px 10px",color:"#44ff44",border:"2px solid #44ff44"}},"＋ついか")
+          ),
+          h("div",{style:{display:"flex",justifyContent:"center"}},h(PentagonChart,{partXP:friendResult.partXP||{},size:150}))
+        ):null,
+        friendResult==="notfound"?h("div",{style:{fontSize:12,color:"#ff4444"}},"みつかりませんでした"):null
+      ),
+      // フレンドリスト（たいせんボタン付き）
+      friends.length>0?h("div",null,
+        h("div",{style:{fontSize:11,color:"#aaa",marginBottom:6}},"▼ ともだちリスト ("+friends.length+"人)"),
+        friends.map(fid=>{
+          var fd=friendDetails[fid];
+          if(!fd)return h("div",{key:fid,className:"dq-win",style:{padding:"10px",marginBottom:8,color:"#aaa",fontSize:12}},"ID: "+fid+" (よみこみ中...)");
+          var activeBattle=getActiveBattle(fid);
+          return h(FriendCard,{
+            key:fid,fd:fd,fid:fid,
+            onRemove:()=>removeFriend(fid),
+            battleStatus:activeBattle?"active":null,
+            onBattle:()=>handleBattleRequest(fid,fd.gorillaName||"ゴリラ",fd.uid)
+          });
+        })
+      ):h("div",{style:{textAlign:"center",color:"#aaa",fontSize:12,padding:20}},"まだともだちがいません")
+    ):null,
+
+    h("div",{style:{height:24}})
+  );
 }
-ReactDOM.createRoot(document.getElementById(“root”)).render(React.createElement(App));
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
-
 </body>
 </html>
