@@ -76,7 +76,7 @@ async function loadUserFromFirestore(uid){
   };
 }
 
-// Firestoreドキュメントからゲームデータを抽出
+// Firestoreドキュメントからゲームデータを抽出（friends/menus含む）
 function buildGameData(d){
   return{
     totalXP:d.totalXP||0,
@@ -95,7 +95,9 @@ function buildGameData(d){
     maxWeight:d.maxWeight||0,
     maxDailySessions:d.maxDailySessions||0,
     workoutLog:d.workoutLog||[],
-    menuRecords:d.menuRecords||0
+    menuRecords:d.menuRecords||0,
+    friends:d.friends||[],
+    menus:d.menus||DEFAULT_MENUS
   };
 }
 
@@ -151,7 +153,7 @@ var BASE_URL="https://urashitaiki-debug.github.io/gorilla-quest/";
 var GORILLA_IMGS=[BASE_URL+"stage0.png",BASE_URL+"stage1.png",BASE_URL+"stage2.png",BASE_URL+"stage3.png",BASE_URL+"stage4.png"];
 var STAGE_LABELS=["あかちゃんゴリラ","こゴリラ","わかゴリラ","おとなゴリラ","さいきょうゴリラ"];
 var VALID_MS=2*60*60*1000;
-var BATTLE_DURATION_MS=5*60*1000;
+var BATTLE_DURATION_MS=3*24*60*60*1000;
 var SK="gorilla_quest_v4",CK="gorilla_checkin_v1",MK="gorilla_menus_v1",FK="gorilla_friends_v1",NK="gorilla_name_v1";
 var DEFAULT_MENUS=[{name:"メニューA",items:[{exercise:"ベンチプレス",weight:60,reps:10,sets:3},{exercise:"ダンベルフライ",weight:20,reps:10,sets:3}]},{name:"メニューB",items:[{exercise:"スクワット",weight:60,reps:10,sets:3},{exercise:"レッグプレス",weight:80,reps:10,sets:3}]},{name:"メニューC",items:[{exercise:"デッドリフト",weight:70,reps:10,sets:3},{exercise:"ラットプルダウン",weight:50,reps:10,sets:3}]}];
 var ROULETTE_TABLE=[{label:"1.5倍",mult:1.5,color:"#44ff44",prob:0.7},{label:"2倍",mult:2.0,color:"#ffdd00",prob:0.25},{label:"3倍",mult:3.0,color:"#ff4444",prob:0.05}];
@@ -406,12 +408,14 @@ function App(){
         setGqId(userData.gqId||makeGQId(u.uid));
         setGorillaName(userData.gorillaName||"ゴリラ");
         setResetAt(userData.resetAt||null);
-        // メニュー・フレンドはlocalStorageから（個人設定）
-        try{var m=JSON.parse(localStorage.getItem(MK)||"null");if(m)setMenus(m);}catch(e){}
-        try{var f=JSON.parse(localStorage.getItem(FK)||"null");if(f)setFriends(f);}catch(e){}
-        // localStorageにもキャッシュ
+        // friends/menusはFirestoreから復元（localStorageより優先）
+        setFriends(gameData.friends||[]);
+        setMenus(gameData.menus||DEFAULT_MENUS);
+        // localStorageにキャッシュ
         localStorage.setItem(SK,JSON.stringify(gameData));
         localStorage.setItem(NK,userData.gorillaName||"ゴリラ");
+        localStorage.setItem(FK,JSON.stringify(gameData.friends||[]));
+        localStorage.setItem(MK,JSON.stringify(gameData.menus||DEFAULT_MENUS));
         setDataReady(true);
       }else{
         setDataReady(false);
@@ -500,9 +504,23 @@ function App(){
     }
   },[authUser,gorillaName]);
 
-  var saveMenus=m=>{setMenus(m);try{localStorage.setItem(MK,JSON.stringify(m));}catch(e){}};
-  var saveFriends=f=>{setFriends(f);try{localStorage.setItem(FK,JSON.stringify(f));}catch(e){}};
+  // saveFriends：localStorage＋Firestoreに保存
+  var saveFriends=useCallback(f=>{
+    setFriends(f);
+    try{localStorage.setItem(FK,JSON.stringify(f));}catch(e){}
+    if(authUser){
+      updateDoc(doc(db,"users",authUser.uid),{friends:f}).catch(()=>{});
+    }
+  },[authUser]);
 
+  // saveMenus：localStorage＋Firestoreに保存
+  var saveMenus=useCallback(m=>{
+    setMenus(m);
+    try{localStorage.setItem(MK,JSON.stringify(m));}catch(e){}
+    if(authUser){
+      updateDoc(doc(db,"users",authUser.uid),{menus:m}).catch(()=>{});
+    }
+  },[authUser]);
   // ── XP記録 ──────────────────────────────────────────────
   function applyXP(d0,xpList,mult=1){
     var today=getToday(),hour=getHour();
@@ -510,9 +528,9 @@ function App(){
     var totalSets=d.totalSets||0,maxWeight=d.maxWeight||0,prCount=d.prCount||0,allXP=0,logItems=[];
     xpList.forEach(item=>{
       var isNew=!exercises[item.exercise],prevMax=exercises[item.exercise]?.maxWeight||0,isPR=item.weight>prevMax&&!isNew;
-      var xp=item.sets*5;if(isNew)xp+=20;if(isPR)xp+=30;
+      var xp=item.sets*5;
+      if(isPR)xp+=30;
       ns.push(today);var streak=getStreak(ns);
-      if(streak>=3&&streak>getStreak(d.sessions))xp+=50;
       xp=Math.round(xp*mult);totalXP+=xp;allXP+=xp;
       partXP[item.part]=(partXP[item.part]||0)+(item.sets*5);
       exercises[item.exercise]={maxWeight:Math.max(item.weight,prevMax),count:(exercises[item.exercise]?.count||0)+1,part:item.part};
@@ -593,7 +611,7 @@ function App(){
         status:"active",startAt:Timestamp.fromDate(now),endAt:Timestamp.fromDate(endAt),
         winnerId:null,createdAt:serverTimestamp()
       });
-      alert("バトルかいし！5ふんかけて！");
+      alert("バトルかいし！3日間で競い合って！");
     }catch(e){alert("バトル申請に失敗しました");}
   }
 
