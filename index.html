@@ -168,7 +168,18 @@ function daysDiff(a,b){return Math.floor((new Date(b)-new Date(a))/86400000);}
 function getStreak(dates){if(!dates.length)return 0;var uniq=[...new Set(dates)].sort().reverse();var s=1;for(var i=0;i<uniq.length-1;i++){if((new Date(uniq[i])-new Date(uniq[i+1]))/86400000===1)s++;else break;}return s;}
 function getStage(lv){if(lv<3)return 0;if(lv<6)return 1;if(lv<10)return 2;if(lv<15)return 3;return 4;}
 function fmtTime(ms){var m=Math.floor(ms/60000);var s=Math.floor((ms%60000)/1000);return m+"分"+("0"+s).slice(-2)+"秒";}
-function fmtCd(endAt){if(!endAt)return"--:--";var end=endAt.toDate?endAt.toDate().getTime():endAt;var diff=Math.max(0,end-Date.now());var m=Math.floor(diff/60000);var s=Math.floor((diff%60000)/1000);return("0"+m).slice(-2)+":"+("0"+s).slice(-2);}
+function fmtCd(endAt){
+  if(!endAt)return"--:--";
+  var end=endAt.toDate?endAt.toDate().getTime():endAt;
+  var diff=Math.max(0,end-Date.now());
+  var days=Math.floor(diff/86400000);
+  var hours=Math.floor((diff%86400000)/3600000);
+  var mins=Math.floor((diff%3600000)/60000);
+  var secs=Math.floor((diff%60000)/1000);
+  if(days>0)return days+"日 "+hours+"時間 "+mins+"分";
+  if(hours>0)return hours+"時間 "+mins+"分 "+secs+"秒";
+  return mins+"分 "+secs+"秒";
+}
 function getPartForEx(ex){var f="胸";Object.keys(PRESETS).forEach(p=>{if(PRESETS[p].includes(ex))f=p;});return f;}
 function calcDegradePenalty(lastDate){if(!lastDate)return 0;var diff=daysDiff(lastDate,getToday());if(diff<3)return 0;if(diff===3)return 15;if(diff===4)return 23;return 30*(diff-4)+23;}
 function rollRoulette(){var r=Math.random(),cum=0;for(var i=0;i<ROULETTE_TABLE.length;i++){cum+=ROULETTE_TABLE[i].prob;if(r<cum)return ROULETTE_TABLE[i];}return ROULETTE_TABLE[0];}
@@ -392,8 +403,47 @@ function App(){
   var[friendDetails,setFriendDetails]=useState({});
   var[battles,setBattles]=useState([]);
   var[resetAt,setResetAt]=useState(null); // リセット日時（バトル履歴フィルタ用）
-  var timerRef=useRef(null);
-  var finalizedRef=useRef(new Set());
+  // Pull-to-Refresh
+  var[pullY,setPullY]=useState(0);
+  var[pulling,setPulling]=useState(false);
+  var[reloading,setReloading]=useState(false);
+  var touchStartY=useRef(0);
+  var PULL_THRESHOLD=80;
+
+  useEffect(()=>{
+    function onTouchStart(e){
+      if(window.scrollY===0)touchStartY.current=e.touches[0].clientY;
+      else touchStartY.current=0;
+    }
+    function onTouchMove(e){
+      if(!touchStartY.current)return;
+      var dy=e.touches[0].clientY-touchStartY.current;
+      if(dy>0&&window.scrollY===0){
+        setPulling(true);
+        setPullY(Math.min(dy,120));
+        if(dy>PULL_THRESHOLD)e.preventDefault();
+      }else{
+        setPulling(false);setPullY(0);
+      }
+    }
+    function onTouchEnd(){
+      if(pulling&&pullY>=PULL_THRESHOLD){
+        setReloading(true);
+        setTimeout(()=>window.location.reload(),400);
+      }else{
+        setPulling(false);setPullY(0);
+      }
+      touchStartY.current=0;
+    }
+    document.addEventListener("touchstart",onTouchStart,{passive:true});
+    document.addEventListener("touchmove",onTouchMove,{passive:false});
+    document.addEventListener("touchend",onTouchEnd,{passive:true});
+    return()=>{
+      document.removeEventListener("touchstart",onTouchStart);
+      document.removeEventListener("touchmove",onTouchMove);
+      document.removeEventListener("touchend",onTouchEnd);
+    };
+  },[pulling,pullY]);
 
   // ── 認証監視＋Firestoreからデータ復元 ──────────────────
   useEffect(()=>{
@@ -661,6 +711,22 @@ function App(){
     xpAnim?h(XPPop,{xp:xpAnim,onDone:()=>setXpAnim(null)}):null,
     lvAnim?h(LevelUpOverlay,{level:lvAnim,onDone:()=>setLvAnim(null)}):null,
     degradeAnim?h(DegradePop,{xp:degradeAnim,onDone:()=>setDegradeAnim(null)}):null,
+
+    // Pull-to-Refreshインジケーター
+    (pulling||reloading)?h("div",{style:{
+      position:"fixed",top:0,left:0,right:0,zIndex:9999,
+      display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+      padding:"10px",
+      background:"rgba(0,0,51,0.92)",
+      borderBottom:"2px solid #44ff44",
+      fontFamily:"'DotGothic16',monospace",
+      fontSize:13,color:"#44ff44",
+      transform:"translateY("+(reloading?0:Math.min(pullY-PULL_THRESHOLD,0))+"px)",
+      transition:reloading?"none":"transform 0.1s"
+    }},
+      h("span",{style:{fontSize:20,animation:reloading?"pulse 0.5s infinite":"none"}},"🦍"),
+      reloading?"更新中...":"離して更新..."
+    ):null,
 
     // タイトル
     h("div",{style:{textAlign:"center",marginBottom:8}},
